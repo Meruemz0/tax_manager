@@ -43,68 +43,67 @@ def optional_id(raw: str | None) -> int | None:
     return int(raw)
 
 
-def mode(raw: str | None) -> str:
-    value = raw or "in"
-    if value not in {"in", "not"}:
-        raise ValidationError("筛选方式无效")
-    return value
-
-
 @dataclass(frozen=True)
 class HomeFilters:
     month: date
     query: str
     taxpayer_identity_id: int | None
-    taxpayer_identity_mode: str
     service_type_id: int | None
-    service_type_mode: str
     customer_source_id: int | None
-    customer_source_mode: str
     filing_month: date | None
     filing_status: bool | None
-    filing_mode: str
     bookkeeping_month: date | None
     bookkeeping_status: bool | None
-    bookkeeping_mode: str
     registered_from: date | None
     registered_to: date | None
+
+    @property
+    def has_criteria(self) -> bool:
+        return bool(
+            self.query
+            or self.taxpayer_identity_id is not None
+            or self.service_type_id is not None
+            or self.customer_source_id is not None
+            or self.filing_status is not None
+            or self.bookkeeping_status is not None
+            or self.registered_from is not None
+            or self.registered_to is not None
+        )
 
 
 def parse_home_filters(args: Mapping[str, str], today: date) -> HomeFilters:
     selected = month_start(args["month"], current=today) if args.get("month") else today.replace(day=1)
 
-    def status(prefix: str) -> tuple[date | None, bool | None, str]:
+    def status(prefix: str) -> tuple[date | None, bool | None]:
         raw = args.get(f"{prefix}_status")
         selected_month = (
             month_start(args[f"{prefix}_month"], current=today)
             if args.get(f"{prefix}_month") else None
         )
-        selected_mode = mode(args.get(f"{prefix}_mode"))
         if raw in (None, ""):
-            return selected_month, None, selected_mode
+            return selected_month, None
         if raw not in {"0", "1"} or selected_month is None:
             raise ValidationError("请为月度状态选择月份和已完成/未完成")
-        return selected_month, raw == "1", selected_mode
+        return selected_month, raw == "1"
 
-    filing_month, filing_status, filing_mode = status("filing")
-    bookkeeping_month, bookkeeping_status, bookkeeping_mode = status("bookkeeping")
+    filing_month, filing_status = status("filing")
+    bookkeeping_month, bookkeeping_status = status("bookkeeping")
     registered_from = optional_day(args.get("registered_from"))
     registered_to = optional_day(args.get("registered_to"))
     if registered_from and registered_to and registered_from > registered_to:
         raise ValidationError("注册时间起点不能晚于终点")
     return HomeFilters(
         selected, (args.get("q") or "").strip()[:100],
-        optional_id(args.get("taxpayer_identity_id")), mode(args.get("taxpayer_identity_mode")),
-        optional_id(args.get("service_type_id")), mode(args.get("service_type_mode")),
-        optional_id(args.get("customer_source_id")), mode(args.get("customer_source_mode")),
-        filing_month, filing_status, filing_mode,
-        bookkeeping_month, bookkeeping_status, bookkeeping_mode,
+        optional_id(args.get("taxpayer_identity_id")),
+        optional_id(args.get("service_type_id")),
+        optional_id(args.get("customer_source_id")),
+        filing_month, filing_status, bookkeeping_month, bookkeeping_status,
         registered_from, registered_to,
     )
 
 
 def build_home_query(filters: HomeFilters) -> tuple[str, tuple]:
-    """Build SQL only from fixed fragments; all user values remain bound parameters."""
+    """Default month view uses active customers; selected criteria search all customers."""
     joins = [
         "LEFT JOIN monthly_bookkeeping AS mb ON mb.customer_id = c.id AND mb.book_month = %s",
         "LEFT JOIN monthly_filings AS mf ON mf.customer_id = c.id AND mf.tax_month = %s",
@@ -113,36 +112,38 @@ def build_home_query(filters: HomeFilters) -> tuple[str, tuple]:
         "LEFT JOIN tag_categories AS cs ON cs.id = c.customer_source_id",
     ]
     params: list = [filters.month, filters.month]
-    conditions = [
-        "c.is_available = TRUE",
-        "(c.registered_at AT TIME ZONE 'Asia/Shanghai')::date < %s",
-    ]
-    condition_params: list = [next_month(filters.month)]
+    conditions: list[str] = []
+    condition_params: list = []
+    if not filters.has_criteria:
+        conditions.extend((
+            "c.is_available = TRUE",
+            "(c.registered_at AT TIME ZONE 'Asia/Shanghai')::date < %s",
+        ))
+        condition_params.append(next_month(filters.month))
     if filters.query:
         conditions.append("(c.name ILIKE %s OR COALESCE(c.tax_identifier, '') ILIKE %s)")
         condition_params.extend((f"%{filters.query}%", f"%{filters.query}%"))
-    for column, selected_id, selected_mode in (
-        ("taxpayer_identity_id", filters.taxpayer_identity_id, filters.taxpayer_identity_mode),
-        ("service_type_id", filters.service_type_id, filters.service_type_mode),
-        ("customer_source_id", filters.customer_source_id, filters.customer_source_mode),
+    for column, selected_id in (
+        ("taxpayer_identity_id", filters.taxpayer_identity_id),
+        ("service_type_id", filters.service_type_id),
+        ("customer_source_id", filters.customer_source_id),
     ):
         if selected_id is not None:
-            operator = "=" if selected_mode == "in" else "IS DISTINCT FROM"
-            conditions.append(f"c.{column} {operator} %s")
+            conditions.append(f"c.{column} = %s")
             condition_params.append(selected_id)
-    for prefix, table, month, value, selected_mode in (
-        ("mf_filter", "monthly_filings", filters.filing_month, filters.filing_status, filters.filing_mode),
-        ("mb_filter", "monthly_bookkeeping", filters.bookkeeping_month, filters.bookkeeping_status, filters.bookkeeping_mode),
+    for alias, table, month, value in (
+        ("mf_filter", "monthly_filings", filters.filing_month, filters.filing_status),
+        ("mb_filter", "monthly_bookkeeping", filters.bookkeeping_month, filters.bookkeeping_status),
     ):
         if value is not None:
             month_column = "tax_month" if table == "monthly_filings" else "book_month"
             status_column = "is_filed" if table == "monthly_filings" else "is_booked"
-            joins.append(f"LEFT JOIN {table} AS {prefix} ON {prefix}.customer_id = c.id AND {prefix}.{month_column} = %s")
+            joins.append(
+                f"JOIN {table} AS {alias} ON {alias}.customer_id = c.id "
+                f"AND {alias}.{month_column} = %s"
+            )
             params.append(month)
-            conditions.append("(c.registered_at AT TIME ZONE 'Asia/Shanghai')::date < %s")
-            condition_params.append(next_month(month))
-            operator = "=" if selected_mode == "in" else "<>"
-            conditions.append(f"COALESCE({prefix}.{status_column}, FALSE) {operator} %s")
+            conditions.append(f"{alias}.{status_column} = %s")
             condition_params.append(value)
     if filters.registered_from:
         conditions.append("(c.registered_at AT TIME ZONE 'Asia/Shanghai')::date >= %s")
@@ -151,10 +152,11 @@ def build_home_query(filters: HomeFilters) -> tuple[str, tuple]:
         conditions.append("(c.registered_at AT TIME ZONE 'Asia/Shanghai')::date <= %s")
         condition_params.append(filters.registered_to)
     sql = """SELECT c.id, c.name, c.tax_identifier, c.note,
-                    COALESCE(mb.is_booked, FALSE) AS is_booked,
-                    COALESCE(mf.is_filed, FALSE) AS is_filed,
+                    mb.is_booked AS is_booked, mf.is_filed AS is_filed,
                     ti.name AS taxpayer_identity, st.name AS service_type,
                     cs.name AS customer_source
              FROM customers AS c\n""" + "\n".join(joins)
-    sql += "\nWHERE " + " AND ".join(conditions) + "\nORDER BY c.id DESC"
+    if conditions:
+        sql += "\nWHERE " + " AND ".join(conditions)
+    sql += "\nORDER BY c.id DESC"
     return sql, tuple(params + condition_params)
