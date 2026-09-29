@@ -1,12 +1,15 @@
-"""Customer records and monthly filing workflow."""
+"""Customer records, monthly statuses, and the private customer home page."""
 
+from datetime import datetime
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from psycopg.errors import UniqueViolation
 
 from tax_manager.auth import login_required
-from tax_manager.customers.validation import CustomerInput, ValidationError, china_today, validate_filing_month
+from tax_manager.customers.validation import CHINA_TZ, CustomerInput, ValidationError, china_now, china_today, validate_filing_month
+from tax_manager.customers.search import build_home_query, parse_home_filters
 from tax_manager.db import connect
 from tax_manager.images.storage import remove_image
+from tax_manager.customer_files.storage import remove_other_file
 
 
 blueprint = Blueprint("customers", __name__)
@@ -19,7 +22,7 @@ def ensure_monthly_filings(conn, customer_id: int | None = None) -> None:
            SELECT c.id, months.month_start::date, FALSE
            FROM customers AS c
            CROSS JOIN LATERAL generate_series(
-               date_trunc('month', c.registered_on::timestamp),
+               date_trunc('month', c.registered_at AT TIME ZONE 'Asia/Shanghai'),
                date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai'),
                interval '1 month'
            ) AS months(month_start)
@@ -29,22 +32,71 @@ def ensure_monthly_filings(conn, customer_id: int | None = None) -> None:
     )
 
 
+def ensure_monthly_bookkeeping(conn, customer_id: int | None = None) -> None:
+    conn.execute(
+        """INSERT INTO monthly_bookkeeping (customer_id, book_month, is_booked)
+           SELECT c.id, months.month_start::date, FALSE
+           FROM customers AS c
+           CROSS JOIN LATERAL generate_series(
+               date_trunc('month', c.registered_at AT TIME ZONE 'Asia/Shanghai'),
+               date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai'),
+               interval '1 month'
+           ) AS months(month_start)
+           WHERE (%s::bigint IS NULL OR c.id = %s)
+           ON CONFLICT (customer_id, book_month) DO NOTHING""",
+        (customer_id, customer_id),
+    )
+
+
 @blueprint.get("/customers")
 @login_required
 def index():
-    query = request.args.get("q", "").strip()[:100]
+    try:
+        filters = parse_home_filters(request.args, china_today())
+    except ValidationError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("customers.index"))
     with connect() as conn:
         ensure_monthly_filings(conn)
-        rows = conn.execute(
-            """SELECT c.id, c.name, c.tax_identifier, c.contact_name, c.contact_phone,
-                      v.tax_month, v.is_filed
-               FROM customers AS c
-               JOIN customer_current_month_filing_status AS v ON v.customer_id = c.id
-               WHERE %s = '' OR c.name ILIKE %s OR COALESCE(c.tax_identifier, '') ILIKE %s
-               ORDER BY c.id DESC""",
-            (query, f"%{query}%", f"%{query}%"),
+        ensure_monthly_bookkeeping(conn)
+        sql, params = build_home_query(filters)
+        rows = conn.execute(sql, params).fetchall()
+        choices = conn.execute(
+            "SELECT id, kind, name FROM tag_categories ORDER BY kind, lower(name), id"
         ).fetchall()
-    return render_template("customers/index.html", customers=rows, query=query)
+    choices_by_kind = {
+        kind: [choice for choice in choices if choice["kind"] == kind]
+        for kind in ("taxpayer_identity", "service_type", "customer_source")
+    }
+    return render_template(
+        "customers/index.html", customers=rows, filters=filters,
+        choices_by_kind=choices_by_kind, current_month=china_today().strftime("%Y-%m"),
+    )
+
+
+def validate_customer_choices(conn, data: CustomerInput) -> None:
+    for kind, selected_id in (
+        ("taxpayer_identity", data.taxpayer_identity_id),
+        ("service_type", data.service_type_id),
+        ("customer_source", data.customer_source_id),
+    ):
+        if selected_id is not None and not conn.execute(
+            "SELECT id FROM tag_categories WHERE id = %s AND kind = %s",
+            (selected_id, kind),
+        ).fetchone():
+            raise ValidationError("所选标签不属于对应字段")
+
+
+def customer_form_choices(conn) -> dict:
+    rows = conn.execute(
+        """SELECT id, kind, name FROM tag_categories
+           WHERE kind IN ('taxpayer_identity', 'service_type', 'customer_source')
+           ORDER BY kind, lower(name), id"""
+    ).fetchall()
+    return {
+        kind: [row for row in rows if row["kind"] == kind]
+        for kind in ("taxpayer_identity", "service_type", "customer_source")
+    }
 
 
 @blueprint.route("/customers/new", methods=["GET", "POST"])
@@ -53,24 +105,37 @@ def create():
     if request.method == "POST":
         try:
             data = CustomerInput.from_form(request.form)
+            registered_at = data.registered_at or china_now()
+            registered_on = registered_at.astimezone(CHINA_TZ).date()
             with connect() as conn:
+                validate_customer_choices(conn, data)
                 row = conn.execute(
-                    """INSERT INTO customers (name, tax_identifier, contact_name, contact_phone, note, registered_on)
-                       VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                    """INSERT INTO customers
+                       (name, tax_identifier, contact_name, contact_phone, note,
+                        registered_on, registered_at, is_available,
+                        taxpayer_identity_id, service_type_id, customer_source_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       RETURNING id""",
                     (data.name, data.tax_identifier, data.contact_name, data.contact_phone,
-                     data.note, data.registered_on or china_today()),
+                     data.note, registered_on, registered_at,
+                     True if data.is_available is None else data.is_available,
+                     data.taxpayer_identity_id, data.service_type_id, data.customer_source_id),
                 ).fetchone()
                 ensure_monthly_filings(conn, row["id"])
+                ensure_monthly_bookkeeping(conn, row["id"])
             flash("客户已添加", "success")
             return redirect(url_for("customers.detail", customer_id=row["id"]))
         except ValidationError as exc:
             flash(str(exc), "error")
         except UniqueViolation:
             flash("税号已存在", "error")
+    with connect() as conn:
+        choices_by_kind = customer_form_choices(conn)
     return render_template(
         "customers/form.html",
-        customer=request.form if request.method == "POST" else {"registered_on": china_today().isoformat()},
-        editing=False,
+        customer=request.form if request.method == "POST" else {},
+        editing=False, choices_by_kind=choices_by_kind,
+        registered_at_value=request.form.get("registered_at", "") if request.method == "POST" else "",
     )
 
 
@@ -79,33 +144,65 @@ def create():
 def detail(customer_id: int):
     with connect() as conn:
         customer = conn.execute(
-            "SELECT c.* FROM customers AS c WHERE c.id = %s", (customer_id,),
+            """SELECT c.*, ti.name AS taxpayer_identity, st.name AS service_type,
+                      cs.name AS customer_source
+               FROM customers AS c
+               LEFT JOIN tag_categories AS ti ON ti.id = c.taxpayer_identity_id
+               LEFT JOIN tag_categories AS st ON st.id = c.service_type_id
+               LEFT JOIN tag_categories AS cs ON cs.id = c.customer_source_id
+               WHERE c.id = %s""",
+            (customer_id,),
         ).fetchone()
         if not customer:
             abort(404)
         ensure_monthly_filings(conn, customer_id)
+        ensure_monthly_bookkeeping(conn, customer_id)
         filings = conn.execute(
             "SELECT tax_month, is_filed FROM monthly_filings WHERE customer_id = %s ORDER BY tax_month DESC",
+            (customer_id,),
+        ).fetchall()
+        bookkeeping = conn.execute(
+            "SELECT book_month, is_booked FROM monthly_bookkeeping WHERE customer_id = %s ORDER BY book_month DESC",
             (customer_id,),
         ).fetchall()
         images = conn.execute(
             "SELECT id, original_name, mime_type, size_bytes FROM customer_images WHERE customer_id = %s ORDER BY id DESC",
             (customer_id,),
         ).fetchall()
+        files = conn.execute(
+            "SELECT id, original_name, size_bytes FROM customer_files WHERE customer_id = %s ORDER BY id DESC",
+            (customer_id,),
+        ).fetchall()
         categories = conn.execute(
-            "SELECT id, name FROM tag_categories ORDER BY lower(name), id"
+            "SELECT id, name FROM tag_categories WHERE kind = 'general' ORDER BY lower(name), id"
         ).fetchall()
         assigned_categories = conn.execute(
             """SELECT t.id, t.name FROM customer_tag_categories AS ct
                JOIN tag_categories AS t ON t.id = ct.category_id
-               WHERE ct.customer_id = %s ORDER BY lower(t.name), t.id""",
+               WHERE ct.customer_id = %s AND t.kind = 'general'
+               ORDER BY lower(t.name), t.id""",
             (customer_id,),
         ).fetchall()
+    months = {
+        row["tax_month"]: {"month": row["tax_month"], "is_filed": row["is_filed"], "is_booked": False}
+        for row in filings
+    }
+    for row in bookkeeping:
+        record = months.setdefault(
+            row["book_month"], {"month": row["book_month"], "is_filed": False, "is_booked": False}
+        )
+        record["is_booked"] = row["is_booked"]
+    history = [months[month] for month in sorted(months, reverse=True)]
+    current = months.get(china_today().replace(day=1), {"is_booked": False, "is_filed": False})
     assigned_ids = {category["id"] for category in assigned_categories}
     available_categories = [category for category in categories if category["id"] not in assigned_ids]
+    registered_at = customer.get("registered_at")
+    registered_at_china = registered_at.astimezone(CHINA_TZ).strftime("%Y-%m-%d %H:%M") if registered_at else str(customer["registered_on"])
     return render_template(
-        "customers/detail.html", customer=customer, filings=filings, images=images,
-        assigned_categories=assigned_categories, available_categories=available_categories,
+        "customers/detail.html", customer=customer, history=history, current_record=current,
+        registered_at_china=registered_at_china,
+        images=images, files=files, assigned_categories=assigned_categories,
+        available_categories=available_categories,
     )
 
 
@@ -117,34 +214,55 @@ def edit(customer_id: int):
             data = CustomerInput.from_form(request.form)
             with connect() as conn:
                 existing = conn.execute(
-                    "SELECT registered_on FROM customers WHERE id = %s FOR UPDATE", (customer_id,)
+                    "SELECT registered_on, registered_at, is_available FROM customers WHERE id = %s FOR UPDATE",
+                    (customer_id,),
                 ).fetchone()
                 if not existing:
                     abort(404)
-                registered_on = data.registered_on or existing["registered_on"]
-                if registered_on.replace(day=1) > existing["registered_on"].replace(day=1):
+                validate_customer_choices(conn, data)
+                old_on = existing["registered_on"]
+                registered_at = data.registered_at or existing.get("registered_at")
+                if registered_at is None:
+                    registered_at = datetime.combine(old_on, datetime.min.time(), CHINA_TZ)
+                registered_on = registered_at.astimezone(CHINA_TZ).date()
+                if registered_on.replace(day=1) > old_on.replace(day=1):
                     earlier_filed = conn.execute(
                         """SELECT 1 FROM monthly_filings
                            WHERE customer_id = %s AND tax_month < %s AND is_filed = TRUE LIMIT 1""",
                         (customer_id, registered_on.replace(day=1)),
                     ).fetchone()
-                    if earlier_filed:
-                        raise ValidationError("新注册日期之前已有已报税记录，请先核对历史月份")
+                    earlier_booked = conn.execute(
+                        """SELECT 1 FROM monthly_bookkeeping
+                           WHERE customer_id = %s AND book_month < %s AND is_booked = TRUE LIMIT 1""",
+                        (customer_id, registered_on.replace(day=1)),
+                    ).fetchone()
+                    if earlier_filed or earlier_booked:
+                        raise ValidationError("新注册时间之前已有已记账或已报税记录，请先核对历史月份")
                     conn.execute(
                         "DELETE FROM monthly_filings WHERE customer_id = %s AND tax_month < %s",
+                        (customer_id, registered_on.replace(day=1)),
+                    )
+                    conn.execute(
+                        "DELETE FROM monthly_bookkeeping WHERE customer_id = %s AND book_month < %s",
                         (customer_id, registered_on.replace(day=1)),
                     )
                 row = conn.execute(
                     """UPDATE customers SET name = %s, tax_identifier = %s,
                        contact_name = %s, contact_phone = %s, note = %s,
-                       registered_on = %s, updated_at = now()
+                       registered_on = %s, registered_at = %s, is_available = %s,
+                       taxpayer_identity_id = %s, service_type_id = %s, customer_source_id = %s,
+                       updated_at = now()
                        WHERE id = %s RETURNING id""",
                     (data.name, data.tax_identifier, data.contact_name, data.contact_phone,
-                     data.note, registered_on, customer_id),
+                     data.note, registered_on, registered_at,
+                     existing.get("is_available", True) if data.is_available is None else data.is_available,
+                     data.taxpayer_identity_id, data.service_type_id, data.customer_source_id,
+                     customer_id),
                 ).fetchone()
                 if not row:
                     abort(404)
                 ensure_monthly_filings(conn, customer_id)
+                ensure_monthly_bookkeeping(conn, customer_id)
             flash("客户资料已更新", "success")
             return redirect(url_for("customers.detail", customer_id=customer_id))
         except ValidationError as exc:
@@ -153,9 +271,19 @@ def edit(customer_id: int):
             flash("税号已存在", "error")
     with connect() as conn:
         customer = conn.execute("SELECT * FROM customers WHERE id = %s", (customer_id,)).fetchone()
-    if not customer:
-        abort(404)
-    return render_template("customers/form.html", customer=request.form if request.method == "POST" else customer, editing=True)
+        if not customer:
+            abort(404)
+        choices_by_kind = customer_form_choices(conn)
+    fallback_timestamp = datetime.combine(customer["registered_on"], datetime.min.time(), CHINA_TZ)
+    registered_at_value = (
+        request.form.get("registered_at", "")
+        if request.method == "POST" else
+        (customer.get("registered_at") or fallback_timestamp).astimezone(CHINA_TZ).strftime("%Y-%m-%dT%H:%M")
+    )
+    return render_template(
+        "customers/form.html", customer=request.form if request.method == "POST" else customer,
+        editing=True, choices_by_kind=choices_by_kind, registered_at_value=registered_at_value,
+    )
 
 
 @blueprint.post("/customers/<int:customer_id>/filing")
@@ -182,7 +310,38 @@ def set_filing(customer_id: int):
     flash("报税状态已更新", "success")
     if request.form.get("return_to") == "detail":
         return redirect(url_for("customers.detail", customer_id=customer_id))
-    return redirect(url_for("customers.index"))
+    return redirect(url_for("customers.index", month=tax_month.strftime("%Y-%m")))
+
+
+@blueprint.post("/customers/<int:customer_id>/bookkeeping")
+@login_required
+def set_bookkeeping(customer_id: int):
+    value = request.form.get("is_booked")
+    if value not in {"0", "1"}:
+        abort(400)
+    with connect() as conn:
+        customer = conn.execute(
+            "SELECT id, registered_on FROM customers WHERE id = %s", (customer_id,)
+        ).fetchone()
+        if not customer:
+            abort(404)
+        try:
+            book_month = validate_filing_month(
+                request.form.get("book_month"), customer["registered_on"], china_today()
+            )
+        except ValidationError:
+            abort(400)
+        conn.execute(
+            """INSERT INTO monthly_bookkeeping (customer_id, book_month, is_booked)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (customer_id, book_month)
+               DO UPDATE SET is_booked = EXCLUDED.is_booked, updated_at = now()""",
+            (customer_id, book_month, value == "1"),
+        )
+    flash("记账状态已更新", "success")
+    if request.form.get("return_to") == "detail":
+        return redirect(url_for("customers.detail", customer_id=customer_id))
+    return redirect(url_for("customers.index", month=book_month.strftime("%Y-%m")))
 
 
 @blueprint.post("/customers/<int:customer_id>/delete")
@@ -195,7 +354,12 @@ def delete(customer_id: int):
         keys = [row["storage_key"] for row in conn.execute(
             "SELECT storage_key FROM customer_images WHERE customer_id = %s FOR UPDATE", (customer_id,)
         ).fetchall()]
+        file_keys = [row["storage_key"] for row in conn.execute(
+            "SELECT storage_key FROM customer_files WHERE customer_id = %s FOR UPDATE", (customer_id,)
+        ).fetchall()]
+        conn.execute("DELETE FROM customer_files WHERE customer_id = %s", (customer_id,))
         conn.execute("DELETE FROM customer_images WHERE customer_id = %s", (customer_id,))
+        conn.execute("DELETE FROM monthly_bookkeeping WHERE customer_id = %s", (customer_id,))
         conn.execute("DELETE FROM monthly_filings WHERE customer_id = %s", (customer_id,))
         conn.execute("DELETE FROM customers WHERE id = %s", (customer_id,))
     for key in keys:
@@ -204,5 +368,11 @@ def delete(customer_id: int):
         except OSError:
             current_app.logger.exception("Failed to remove customer image file")
             flash("客户已删除，但有图片文件未清理，请检查服务器日志", "error")
+    for key in file_keys:
+        try:
+            remove_other_file(key)
+        except OSError:
+            current_app.logger.exception("Failed to remove customer other file")
+            flash("客户已删除，但有其他文件未清理，请检查服务器日志", "error")
     flash("客户已删除", "success")
     return redirect(url_for("customers.index"))

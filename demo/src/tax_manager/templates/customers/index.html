@@ -1,34 +1,70 @@
 {% extends 'base.html' %}
-{% block title %}客户工作台 · 税务客户管理{% endblock %}
+{% block title %}首页 · 税务客户管理{% endblock %}
 {% block content %}
+{% set selected_month = filters.month.strftime('%Y-%m') %}
 <div class="page-heading">
-  <div><div class="eyebrow">工作台 / 客户</div><h1>客户与本月申报</h1><p>按中国时间统计本月，直接在列表中更新申报状态。</p></div>
+  <div><div class="eyebrow">工作台</div><h1>首页</h1><p>按中国时间选择月份，仅显示当月已在本公司注册且标记为可用的客户。</p></div>
   <a class="button primary" href="{{ url_for('customers.create') }}">＋ 新增客户</a>
 </div>
-<section class="summary-grid">
-  <div class="summary-card"><span>当前显示客户</span><strong>{{ customers|length }}</strong></div>
-  <div class="summary-card"><span>已报税</span><strong>{{ customers|selectattr('is_filed')|list|length }}</strong></div>
-  <div class="summary-card"><span>未报税</span><strong>{{ customers|rejectattr('is_filed')|list|length }}</strong></div>
+<section class="panel">
+  <form method="get" class="stacked-form">
+    <div class="form-grid">
+      <label>显示月份<input type="month" name="month" value="{{ selected_month }}" max="{{ current_month }}"></label>
+      <label>名称或税号<input name="q" value="{{ filters.query }}" maxlength="100" placeholder="搜索客户"></label>
+    </div>
+    <div class="filter-grid">
+      {% for kind, title, selected_id, selected_mode in [
+        ('taxpayer_identity', '纳税人身份', filters.taxpayer_identity_id, filters.taxpayer_identity_mode),
+        ('service_type', '服务类型', filters.service_type_id, filters.service_type_mode),
+        ('customer_source', '客户来源', filters.customer_source_id, filters.customer_source_mode)
+      ] %}
+      <div class="filter-pair">
+        <label>{{ title }}<select name="{{ kind }}_id"><option value="">不限</option>
+          {% for choice in choices_by_kind[kind] %}<option value="{{ choice.id }}" {% if selected_id == choice.id %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}
+        </select></label>
+        <label>关系<select name="{{ kind }}_mode"><option value="in" {% if selected_mode == 'in' %}selected{% endif %}>属于</option><option value="not" {% if selected_mode == 'not' %}selected{% endif %}>不属于</option></select></label>
+      </div>
+      {% endfor %}
+      <div class="filter-pair">
+        <label>报税月份<input type="month" name="filing_month" value="{{ filters.filing_month.strftime('%Y-%m') if filters.filing_month else '' }}" max="{{ current_month }}"></label>
+        <label>报税状态<select name="filing_status"><option value="">不限</option><option value="1" {% if filters.filing_status is sameas true %}selected{% endif %}>已报税</option><option value="0" {% if filters.filing_status is sameas false %}selected{% endif %}>未报税</option></select></label>
+        <label>关系<select name="filing_mode"><option value="in" {% if filters.filing_mode == 'in' %}selected{% endif %}>属于</option><option value="not" {% if filters.filing_mode == 'not' %}selected{% endif %}>不属于</option></select></label>
+      </div>
+      <div class="filter-pair">
+        <label>记账月份<input type="month" name="bookkeeping_month" value="{{ filters.bookkeeping_month.strftime('%Y-%m') if filters.bookkeeping_month else '' }}" max="{{ current_month }}"></label>
+        <label>记账状态<select name="bookkeeping_status"><option value="">不限</option><option value="1" {% if filters.bookkeeping_status is sameas true %}selected{% endif %}>已记账</option><option value="0" {% if filters.bookkeeping_status is sameas false %}selected{% endif %}>未记账</option></select></label>
+        <label>关系<select name="bookkeeping_mode"><option value="in" {% if filters.bookkeeping_mode == 'in' %}selected{% endif %}>属于</option><option value="not" {% if filters.bookkeeping_mode == 'not' %}selected{% endif %}>不属于</option></select></label>
+      </div>
+      <div class="filter-pair">
+        <label>注册时间从<input type="date" name="registered_from" value="{{ filters.registered_from or '' }}"></label>
+        <label>注册时间到<input type="date" name="registered_to" value="{{ filters.registered_to or '' }}"></label>
+      </div>
+    </div>
+    <div class="form-actions"><button class="button primary" type="submit">筛选</button><a class="button subtle" href="{{ url_for('customers.index') }}">清除筛选</a></div>
+  </form>
+</section>
+<section class="summary-grid space-top">
+  <div class="summary-card"><span>显示客户</span><strong>{{ customers|length }}</strong></div>
+  <div class="summary-card"><span>{{ selected_month }} 已记账</span><strong>{{ customers|selectattr('is_booked')|list|length }}</strong></div>
+  <div class="summary-card"><span>{{ selected_month }} 已报税</span><strong>{{ customers|selectattr('is_filed')|list|length }}</strong></div>
 </section>
 <section class="panel">
-  <div class="section-head"><div><h2>客户列表</h2><p>搜索名称或税号，点击客户查看详细资料和图片。</p></div>
-    <form method="get" class="search-form"><input name="q" value="{{ query }}" placeholder="搜索客户或税号" aria-label="搜索客户或税号"><button class="button subtle" type="submit">搜索</button></form>
-  </div>
+  <div class="section-head"><div><h2>{{ selected_month }} 客户</h2><p>点击名称查看完整资料、历史月份和文件。</p></div></div>
   {% if customers %}
-  <div class="table-wrap"><table><thead><tr><th>客户</th><th>税号</th><th>联系人</th><th>本月状态</th><th>操作</th></tr></thead><tbody>
-  {% for customer in customers %}
+  <div class="table-wrap"><table class="home-table"><thead><tr><th>名称</th><th>税号</th><th>本月记账</th><th>本月报税</th><th>纳税人身份</th><th>服务类型</th><th>客户来源</th><th>备注</th></tr></thead><tbody>
+    {% for customer in customers %}
     <tr>
-      <td><a class="strong-link" href="{{ url_for('customers.detail', customer_id=customer.id) }}">{{ customer.name }}</a><small>#{{ customer.id }}</small></td>
-      <td>{{ customer.tax_identifier or '—' }}</td><td>{{ customer.contact_name or '—' }}{% if customer.contact_phone %}<small>{{ customer.contact_phone }}</small>{% endif %}</td>
+      <td><a class="strong-link" href="{{ url_for('customers.detail', customer_id=customer.id) }}">{{ customer.name }}</a></td>
+      <td>{{ customer.tax_identifier or '—' }}</td>
+      <td><span class="badge {{ 'done' if customer.is_booked else 'pending' }}">{{ '已记账' if customer.is_booked else '未记账' }}</span></td>
       <td><span class="badge {{ 'done' if customer.is_filed else 'pending' }}">{{ '已报税' if customer.is_filed else '未报税' }}</span></td>
-      <td><form method="post" action="{{ url_for('customers.set_filing', customer_id=customer.id) }}" class="inline-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <select name="is_filed" aria-label="{{ customer.name }}的本月报税状态"><option value="0" {% if not customer.is_filed %}selected{% endif %}>未报税</option><option value="1" {% if customer.is_filed %}selected{% endif %}>已报税</option></select>
-        <button class="button small" type="submit">保存</button>
-      </form></td>
+      <td>{{ customer.taxpayer_identity or '—' }}</td>
+      <td>{{ customer.service_type or '—' }}</td>
+      <td>{{ customer.customer_source or '—' }}</td>
+      <td>{{ (customer.note or '')[:20] }}{% if customer.note and customer.note|length > 20 %}…{% endif %}</td>
     </tr>
-  {% endfor %}
+    {% endfor %}
   </tbody></table></div>
-  {% else %}<div class="empty-state"><strong>没有找到客户</strong><p>可以新增客户，或换一个关键词搜索。</p><a class="button primary" href="{{ url_for('customers.create') }}">新增客户</a></div>{% endif %}
+  {% else %}<div class="empty-state"><strong>该月份没有符合条件的客户</strong><p>可以调整月份或筛选条件。</p></div>{% endif %}
 </section>
 {% endblock %}

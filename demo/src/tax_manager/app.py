@@ -17,7 +17,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.config.update(
         DATABASE_URL=os.environ.get("DATABASE_URL"),
         STORAGE_DIR=os.environ.get("STORAGE_DIR"),
-        MAX_CONTENT_LENGTH=11 * 1024 * 1024,
+        MAX_CONTENT_LENGTH=64 * 1024 * 1024,
         PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -63,15 +63,19 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.errorhandler(RequestEntityTooLarge)
     def upload_too_large(error):
-        return "上传内容超过 10 MB 限制", 413
+        return "上传内容超过 64 MB 限制", 413
 
     from tax_manager.auth import blueprint as auth_blueprint
     from tax_manager.customers import blueprint as customers_blueprint
+    from tax_manager.customers.api import blueprint as customer_api_blueprint
     from tax_manager.images import blueprint as images_blueprint
     from tax_manager.tags import blueprint as tags_blueprint
+    from tax_manager.customer_files import blueprint as customer_files_blueprint
 
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(customers_blueprint)
+    app.register_blueprint(customer_api_blueprint)
     app.register_blueprint(images_blueprint)
     app.register_blueprint(tags_blueprint)
+    app.register_blueprint(customer_files_blueprint)
     return app

@@ -128,14 +128,17 @@ def test_customer_and_image_pages_render_edit_controls(tmp_path):
         "contact_phone": "", "note": "备注", "is_filed": False, "tax_month": date(2026, 9, 1),
         "created_at": datetime(2026, 9, 1, tzinfo=timezone.utc),
     }
+    from tax_manager.customers.search import parse_home_filters
+    filters = parse_home_filters({}, date(2026, 9, 29))
     image = {"id": 3, "original_name": "截图.png", "mime_type": "image/png", "size_bytes": 1024}
     with app.test_request_context("/"):
         session["user_id"] = 1
         session["username"] = "wfg1"
-        dashboard = render_template("customers/index.html", customers=[customer], query="")
+        dashboard = render_template("customers/index.html", customers=[customer], filters=filters, current_month="2026-09", choices_by_kind={"taxpayer_identity": [], "service_type": [], "customer_source": []})
         detail = render_template("customers/detail.html", customer=customer, images=[image])
         gallery = render_template("images/unassigned.html", images=[image])
-    assert 'name="is_filed"' in dashboard
+    assert 'name="filing_status"' in dashboard
+    assert 'name="bookkeeping_status"' in dashboard
     assert 'href="/customers"' in dashboard
     assert 'href="/unassigned"' in dashboard
     assert '/customers/7/edit' in detail
@@ -156,7 +159,7 @@ def test_customer_detail_renders_editable_history_for_each_month(tmp_path):
     ]
     with app.test_request_context("/customers/7"):
         session["user_id"] = 1
-        html = render_template("customers/detail.html", customer=customer, images=[], filings=filings)
+        html = render_template("customers/detail.html", customer=customer, images=[], files=[], history=[{"month": row["tax_month"], "is_filed": row["is_filed"], "is_booked": False} for row in filings])
     assert 'name="tax_month" value="2026-08"' in html
     assert 'name="tax_month" value="2026-09"' in html
     assert "2026 年 08 月" in html
@@ -247,7 +250,7 @@ def test_customer_create_and_filing_update_use_form_values(tmp_path, monkeypatch
     assert created.status_code == 302 and created.headers["Location"].endswith("/customers/7")
     assert changed.status_code == 302
     assert next(params for sql, params in statements if "INSERT INTO customers" in sql)[:2] == ("新客户", "T-1")
-    assert next(params for sql, params in statements if "INSERT INTO customers" in sql)[-1] == date(2024, 1, 15)
+    assert date(2024, 1, 15) in next(params for sql, params in statements if "INSERT INTO customers" in sql)
     assert next(params for sql, params in statements if "INSERT INTO monthly_filings" in sql and "DO UPDATE" in sql)[0] == 7
 
 
@@ -366,7 +369,7 @@ def test_edit_registration_date_backfills_earlier_months(tmp_path, monkeypatch):
             statements.append((statement, params))
             if "FROM site_users" in statement:
                 return Result({"id": 1, "username": "wfg1"})
-            if "SELECT registered_on FROM customers" in statement:
+            if "SELECT registered_on, registered_at, is_available FROM customers" in statement:
                 return Result({"registered_on": date(2024, 3, 10)})
             if "UPDATE customers" in statement:
                 return Result({"id": 7})
@@ -398,6 +401,9 @@ def test_edit_cannot_erase_earlier_filed_month(tmp_path, monkeypatch):
         def fetchone(self):
             return self.row
 
+        def fetchall(self):
+            return []
+
     class Connection:
         def __enter__(self):
             return self
@@ -408,7 +414,7 @@ def test_edit_cannot_erase_earlier_filed_month(tmp_path, monkeypatch):
         def execute(self, statement, params=None):
             if "FROM site_users" in statement:
                 return Result({"id": 1, "username": "wfg1"})
-            if "SELECT registered_on FROM customers" in statement:
+            if "SELECT registered_on, registered_at, is_available FROM customers" in statement:
                 return Result({"registered_on": date(2024, 1, 15)})
             if "SELECT 1 FROM monthly_filings" in statement:
                 return Result({"exists": 1})
@@ -586,6 +592,12 @@ def test_customer_delete_removes_month_records_and_image_file(tmp_path, monkeypa
         path = file_path("customer", key)
         path.parent.mkdir(parents=True)
         path.write_bytes(b"old image")
+    from tax_manager.customer_files.storage import file_path as other_file_path
+    other_key = "c" * 32
+    with app.app_context():
+        other_path = other_file_path(other_key)
+        other_path.parent.mkdir(parents=True)
+        other_path.write_bytes(b"old attachment")
     statements = []
 
     class Result:
@@ -605,6 +617,8 @@ def test_customer_delete_removes_month_records_and_image_file(tmp_path, monkeypa
                 return Result(row={"id": 7, "username": "wfg1"})
             if "SELECT storage_key FROM customer_images" in statement:
                 return Result(rows=[{"storage_key": key}])
+            if "SELECT storage_key FROM customer_files" in statement:
+                return Result(rows=[{"storage_key": other_key}])
             return Result()
 
     @contextmanager
@@ -620,6 +634,9 @@ def test_customer_delete_removes_month_records_and_image_file(tmp_path, monkeypa
     response = client.post("/customers/7/delete", data={"csrf_token": "token"})
     assert response.status_code == 302
     assert not path.exists()
+    assert not other_path.exists()
+    assert any("DELETE FROM monthly_bookkeeping" in sql for sql in statements)
+    assert any("DELETE FROM customer_files" in sql for sql in statements)
     assert any("DELETE FROM monthly_filings" in sql for sql in statements)
     assert any("DELETE FROM customers" in sql for sql in statements)
 

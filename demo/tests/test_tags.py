@@ -57,7 +57,7 @@ def test_tag_management_page_has_create_form(tmp_path, monkeypatch):
             return {"id": 1, "username": "wfg1"}
 
         def fetchall(self):
-            return [{"id": 3, "name": "一般纳税人"}]
+            return [{"id": 3, "kind": "taxpayer_identity", "name": "一般纳税人"}]
 
     class Connection:
         def __enter__(self):
@@ -139,7 +139,7 @@ def test_customer_detail_shows_assigned_and_available_categories(tmp_path, monke
         def execute(self, statement, params=None):
             if "FROM site_users" in statement:
                 return Result(row={"id": 1, "username": "wfg1"})
-            if "SELECT c.* FROM customers" in statement:
+            if "FROM customers AS c" in statement:
                 return Result(row={
                     "id": 7, "name": "测试客户", "registered_on": date(2024, 1, 15),
                     "created_at": datetime(2024, 1, 15, tzinfo=timezone.utc),
@@ -160,3 +160,13 @@ def test_customer_detail_shows_assigned_and_available_categories(tmp_path, monke
     assert "已关联分类" in html and "待关联分类" in html
     assert 'value="4"' in html and 'value="3"' not in html
     assert "/customers/7/tag-categories/3/delete" in html
+
+
+def test_tag_kinds_distinguish_three_single_choice_fields_from_general_tags():
+    from tax_manager.tags import category_kind
+
+    assert category_kind("taxpayer_identity") == "taxpayer_identity"
+    assert category_kind("service_type") == "service_type"
+    assert category_kind("customer_source") == "customer_source"
+    assert category_kind(None) == "general"
+    assert category_kind("filing") is None

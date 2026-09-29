@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}{{ '编辑客户' if editing else '新增客户' }} · 税务客户管理{% endblock %}
 {% block content %}
-<div class="page-heading"><div><div class="eyebrow">工作台 / 客户</div><h1>{{ '编辑客户' if editing else '新增客户' }}</h1><p>客户名称必填，其余资料可按需要补充。</p></div></div>
+<div class="page-heading"><div><div class="eyebrow"><a href="{{ url_for('customers.index') }}">首页</a> / 客户</div><h1>{{ '编辑客户' if editing else '新增客户' }}</h1><p>只有名称必填。新客户留空注册时间时，使用中国时间当前时刻，状态默认为可用。</p></div></div>
 <section class="panel form-panel">
   <form method="post" class="stacked-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -10,10 +10,18 @@
       <label>税号<input name="tax_identifier" value="{{ customer.get('tax_identifier') or '' }}" maxlength="64"></label>
       <label>联系人<input name="contact_name" value="{{ customer.get('contact_name') or '' }}" maxlength="100"></label>
       <label>联系电话<input name="contact_phone" value="{{ customer.get('contact_phone') or '' }}" maxlength="50" inputmode="tel"></label>
-      <label>客户注册日期<input name="registered_on" type="date" value="{{ customer.get('registered_on') or '' }}" required></label>
+      <label>在本公司注册时间<input name="registered_at" type="datetime-local" value="{{ registered_at_value if registered_at_value is defined else '' }}"><small>留空则新增时使用当前中国时间。</small></label>
+      {% set available_value = customer.get('is_available', '1') %}
+      <label>可用状态<select name="is_available"><option value="1" {% if available_value == true or available_value == '1' %}selected{% endif %}>可用</option><option value="0" {% if available_value == false or available_value == '0' %}selected{% endif %}>不可用</option></select></label>
+      {% for kind, label in [('taxpayer_identity_id','纳税人身份'), ('service_type_id','服务类型'), ('customer_source_id','客户来源')] %}
+      {% set choice_kind = kind[:-3] %}
+      <label>{{ label }}<select name="{{ kind }}"><option value="">未设置</option>
+        {% for choice in choices_by_kind[choice_kind] if choices_by_kind is defined %}<option value="{{ choice.id }}" {% if customer.get(kind)|string == choice.id|string %}selected{% endif %}>{{ choice.name }}</option>{% endfor %}
+      </select></label>
+      {% endfor %}
     </div>
     <label>备注（最多 255 字）<textarea name="note" maxlength="255" rows="4">{{ customer.get('note') or '' }}</textarea></label>
-    <div class="form-actions"><button class="button primary" type="submit">{{ '保存修改' if editing else '添加客户' }}</button><a class="button subtle" href="{{ url_for('customers.index') }}">返回列表</a></div>
+    <div class="form-actions"><button class="button primary" type="submit">{{ '保存修改' if editing else '添加客户' }}</button><a class="button subtle" href="{{ url_for('customers.index') }}">返回首页</a></div>
   </form>
 </section>
 {% endblock %}

@@ -1,11 +1,11 @@
 # tax_manager
 
-一个基于 Flask 与 PostgreSQL 的税务客户管理示例。公开首页可以直接访问，客户资料、逐月报税状态、标签分类及图片操作需要登录。
+一个基于 Flask 与 PostgreSQL 的税务客户管理示例。公开首页可以直接访问，客户资料、逐月记账与报税状态、标签分类及文件操作需要登录。
 
 ## 开始使用
 
 1. 阅读 [Demo 安装与运行说明](demo/README.md)。
-2. 新数据库在 Navicat 中依次执行 [基础建表](demo/init.sql) 与 [增量升级](demo/upgrade_v2.sql)；已有 Demo 数据库只执行尚未运行的升级脚本。
+2. 新数据库在 Navicat 中依次执行 [基础建表](demo/init.sql)、[第二版升级](demo/upgrade_v2.sql) 与 [第三版升级](demo/upgrade_v3.sql)；已有 Demo 数据库只执行尚未运行的升级脚本。
 3. 复制 `demo/.env.example` 为 `demo/.env` 并填写自己的数据库连接。`.env`、上传文件和会话密钥均被 Git 忽略。
 4. 新数据库的 `wfg1` 账号没有公开初始密码；先按 Demo 说明运行 `auth set-password wfg1` 设置私有密码，再登录。
 

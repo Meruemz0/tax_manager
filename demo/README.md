@@ -6,7 +6,9 @@
 
 先在 Navicat 中连接 `tax_db`，对目标数据库运行本目录的 `init.sql`（右键数据库 → **运行 SQL 文件**，编码 UTF-8，关闭“出错后继续执行”）。如果根目录 `../init.sql` 已执行，直接运行这里的 `init.sql` 即可；现有三张表会跳过，新增登录表、登录限速表、无归属图片表、当月状态视图和五条演示客户记录。脚本可重复执行，不覆盖已有数据；如果曾执行过旧版 `demo/init.sql`，也要重新执行当前版本以补齐 `login_attempts` 表。
 
-**已有数据库升级至逐月记录和标签分类：** 关闭正在运行的网站，在 Navicat 对同一个 `tax_db` 运行 [upgrade_v2.sql](upgrade_v2.sql)，然后重新双击 `启动网站.bat`。这是在已执行 `demo/init.sql` 的基础上运行的增量脚本，不要删除数据库，也不要重新导入测试数据。它把现有客户的注册日期初始化为建档时间的中国日期，从注册月份到当前中国月份补齐“未报税”记录；已有“已报税”记录不会被覆盖。旧备注如超过 255 字，脚本会报错并回滚，请先检查 `SELECT id, name, length(note) FROM customers WHERE length(note) > 255;`，人工缩短后重新运行。新数据库也应按 `init.sql`、`upgrade_v2.sql` 的顺序运行。
+**已有数据库先升级至逐月记录和标签分类：** 关闭正在运行的网站，在 Navicat 对同一个 `tax_db` 运行 [upgrade_v2.sql](upgrade_v2.sql)，然后重新双击 `启动网站.bat`。这是在已执行 `demo/init.sql` 的基础上运行的增量脚本，不要删除数据库，也不要重新导入测试数据。它把现有客户的注册日期初始化为建档时间的中国日期，从注册月份到当前中国月份补齐“未报税”记录；已有“已报税”记录不会被覆盖。旧备注如超过 255 字，脚本会报错并回滚，请先检查 `SELECT id, name, length(note) FROM customers WHERE length(note) > 255;`，人工缩短后重新运行。新数据库也应按 `init.sql`、`upgrade_v2.sql` 的顺序运行。
+
+**本次功能升级：** 关闭网站，在 Navicat 对同一个 `tax_db` 运行 [upgrade_v3.sql](upgrade_v3.sql)，确认执行成功后再启动网站。它以旧版 `registered_on` 的中国时间零点补齐 `registered_at`，新增“可用”状态、三类单选标签、独立的逐月记账表和其他文件表；已有报税、客户、图片和通用标签保留。新数据库依次执行 `init.sql`、`upgrade_v2.sql`、`upgrade_v3.sql`。三个脚本不可跳步；本次脚本可重复运行。
 
 ## 安装与运行
 
@@ -49,10 +51,39 @@ Windows PowerShell 手动运行开发服务器时，先设置 `$env:PYTHONPATH =
 
 ## 使用方式
 
-- **客户**：列表支持按名称或税号搜索，可直接切换中国时间当月的“已报税 / 未报税”。进入详情可查看并修改从注册月份开始的每个月状态、编辑客户资料和注册日期、管理最多 255 字备注、关联标签分类、管理图片。若把注册日期改晚，且此前有“已报税”记录，页面会拒绝修改以保护历史数据。
-- **标签分类**：登录后点顶部“标签分类”可新增、删除分类；客户详情可关联或移除分类。API：`GET /api/tag-categories` 列表、`POST /api/tag-categories` 创建，JSON 例子为 `{"name":"一般纳税人"}`；请求必须带登录 Cookie 和 `X-CSRF-Token` 头，令牌可从登录后的页面隐藏表单字段 `csrf_token` 获取。名称最多 60 字且不允许重复。
-- **图片库**：保存不关联客户的截图。两类图片都可预览、改名、替换、下载和删除。仅允许真实 PNG、JPEG、WebP 文件，单张最多 10 MB。
-- **数据位置**：PostgreSQL 存客户、报税状态、账号和图片目录信息；图片原件保存在 `STORAGE_DIR`。页面下载和预览经网站登录校验后提供。
+- **首页**：登录后按中国时间选月份，默认当前月，只显示已在本公司注册且状态为“可用”的客户。显示名称、税号、该月记账与报税状态、纳税人身份、服务类型、客户来源及备注前 20 字。可按三类标签的“属于 / 不属于”、指定月份的记账 / 报税状态、注册日期区间筛选。
+- **客户详情**：保留原有图片功能；显示完整备注、联系人、可用状态和两个独立的月度历史状态。两种月度状态固定为“已 / 未”，可逐月修改，已完成显示绿色，未完成显示红色。注册时间默认当前中国时间，可用状态默认“可用”。将注册时间改晚且此前存在已记账或已报税记录时会拒绝修改。
+- **标签分类**：在页面中分别管理“纳税人身份”“服务类型”“客户来源”的单选值，以及旧版“其他标签”。记账、报税状态不在标签页管理。API `GET /api/tag-categories?kind=service_type` 查询，`POST /api/tag-categories` 创建，例如 `{"kind":"service_type","name":"代理记账"}`。kind 可为 `taxpayer_identity`、`service_type`、`customer_source`、`general`；省略时按 `general` 处理。
+- **其他文件**：详情页可上传、改名、下载和删除任意格式文件；单个文件最多 1 MiB，每个客户最多 10 个。文件经登录校验并强制作为附件下载。客户删除时同时清理月度记录、图片和其他文件。
+- **图片库**：保留无归属图片及客户图片的预览、改名、替换、下载和删除；只接受真实 PNG、JPEG、WebP，单张最多 10 MB。
+
+### 一次创建完整客户的 API
+
+`POST /api/customers` 需要已登录的 Cookie 和页面中的 `csrf_token`（请求头 `X-CSRF-Token`）。支持 `application/json`，只有 `name` 必填；空缺的注册时间使用中国时间当前时刻，可用状态默认 true。示例 JSON：
+
+```json
+{
+  "name": "测试客户",
+  "tax_identifier": "913000000000000000",
+  "contact_name": "张三",
+  "contact_phone": "13800000000",
+  "note": "最多 255 字",
+  "registered_at": "2026-09-01T09:00:00+08:00",
+  "is_available": true,
+  "taxpayer_identity_id": 1,
+  "service_type_id": 2,
+  "customer_source_id": 3,
+  "general_tag_ids": [4],
+  "monthly_bookkeeping": {"2026-09": true},
+  "monthly_filings": {"2026-09": false}
+}
+```
+
+三种单选字段的 ID 来自相应 kind 的标签 API；`general_tag_ids` 是可选的旧版多选标签。历史月份必须处于该客户注册月份至当前中国月份之间，状态使用 JSON 布尔值。成功返回 HTTP 201、客户 ID 与详情页地址。若需一并上传客户图片和其他文件，改用 `multipart/form-data`：`payload` 字段放上述 JSON，图片用多个 `images` 字段，其他文件用多个 `other_files` 字段。图片与文件资料在同一数据库事务中保存；上传总请求最大 64 MiB。页面新增客户表单先填写基本字段，再到详情页管理历史月份与文件。
+
+### 数据位置与备份
+
+PostgreSQL 存客户、两种月度状态、账号和文件目录信息；原件保存在 `STORAGE_DIR`。备份和恢复时必须让数据库与该目录对应。
 
 ## 测试与恢复
 
@@ -60,7 +91,7 @@ Windows PowerShell 手动运行开发服务器时，先设置 `$env:PYTHONPATH =
 uv run --frozen pytest -q
 ```
 
-需要同时备份 PostgreSQL 和 `STORAGE_DIR`。删除操作会立即移除数据；如需恢复，请从对应时间点的数据库和图片备份一起恢复。数据库提交后若文件清理失败，页面会提示，服务器日志会记录错误；此时可能留有孤立文件，需要人工清理。
+需要同时备份 PostgreSQL 和 `STORAGE_DIR`。删除操作会立即移除数据；如需恢复，请从对应时间点的数据库和文件备份一起恢复。数据库提交后若文件清理失败，页面会提示，服务器日志会记录错误；此时可能留有孤立文件，需要人工清理。
 
 停止网站写入后，可检查数据库与图片目录是否一致：
 
@@ -72,6 +103,6 @@ PYTHONPATH=src uv run --frozen --env-file .env flask --app tax_manager.app:creat
 
 ## 目录与依赖
 
-`src/tax_manager/auth` 负责登录和密码，`customers` 负责客户及月度状态，`tags` 负责标签分类，`images` 负责图片表单和文件，`db` 负责连接，`templates` 与 `static` 提供网页界面。SQL 使用参数化查询，动态表名只从固定白名单选择。
+`src/tax_manager/auth` 负责登录和密码，`customers` 负责客户及月度状态，`tags` 负责标签分类，`images` 负责图片，`customer_files` 负责其他文件，`db` 负责连接，`templates` 与 `static` 提供网页界面。SQL 使用参数化查询，动态表名只从固定白名单选择。
 
 Flask（BSD-3-Clause）用于表单页面与会话；相比直接使用标准库 HTTP 服务，减少路由和模板代码。Psycopg 3 及其 binary 包（LGPL-3.0-only）连接 PostgreSQL；相比调用 `psql` 子进程，能使用参数化查询和事务。Pillow（MIT-CMU）校验上传图片的实际格式；相比只检查扩展名，可以拒绝伪装文件。Gunicorn（MIT）用于 Linux 部署。依赖版本锁在 `uv.lock`；这些项目在 2026 年仍有维护中的发布版本。应用本身不使用 LLM。
