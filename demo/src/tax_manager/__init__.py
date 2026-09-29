@@ -1,0 +1,1 @@
+"""Tax manager web application."""

@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}登录 · 税务客户管理{% endblock %}
+{% block content %}
+<div class="login-layout">
+  <section class="login-intro">
+    <div class="eyebrow">TAX MANAGER</div>
+    <h1>把客户资料与<br>本月申报放在一起</h1>
+    <p>登录后可查看客户信息、更新报税状态，并管理客户图片和图片库。</p>
+    <a class="button" href="{{ url_for('home') }}">返回首页</a>
+    <div class="login-art" aria-hidden="true"><span>01</span><span>客户档案</span><span>02</span><span>申报状态</span><span>03</span><span>图片资料</span></div>
+  </section>
+  <section class="panel login-panel">
+    <div class="eyebrow">欢迎回来</div>
+    <h2>账号登录</h2>
+    <p class="muted">请输入网站账号和密码。</p>
+    <form method="post" class="stacked-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>账号<input name="username" autocomplete="username" required maxlength="100" autofocus></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="button primary full" type="submit">登录工作台</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

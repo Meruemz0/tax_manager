@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% from 'images/_cards.html' import cards %}
+{% block title %}{{ customer.name }} · 税务客户管理{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><a href="{{ url_for('customers.index') }}">客户列表</a> / 客户详情</div><h1>{{ customer.name }}</h1><p>客户编号 #{{ customer.id }} · 建档于 {{ customer.created_at.strftime('%Y-%m-%d') }}</p></div><a class="button subtle" href="{{ url_for('customers.edit', customer_id=customer.id) }}">编辑资料</a></div>
+<div class="detail-grid">
+  <section class="panel"><div class="section-head"><h2>客户资料</h2></div><dl class="details"><div><dt>税号</dt><dd>{{ customer.tax_identifier or '—' }}</dd></div><div><dt>联系人</dt><dd>{{ customer.contact_name or '—' }}</dd></div><div><dt>联系电话</dt><dd>{{ customer.contact_phone or '—' }}</dd></div><div><dt>注册日期</dt><dd>{{ customer.registered_on or '—' }}</dd></div><div><dt>备注</dt><dd class="pre-wrap">{{ customer.note or '—' }}</dd></div></dl></section>
+  <section class="panel status-panel">
+    <div class="section-head"><div><h2>每月报税记录</h2><p>从客户注册月份起，按中国时间逐月保存；可修改任意历史月份。</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>月份</th><th>当前状态</th><th>修改状态</th></tr></thead><tbody>
+      {% for filing in filings %}
+      <tr><td>{{ filing.tax_month.strftime('%Y 年 %m 月') }}</td>
+        <td><span class="badge {{ 'done' if filing.is_filed else 'pending' }}">{{ '已报税' if filing.is_filed else '未报税' }}</span></td>
+        <td><form method="post" action="{{ url_for('customers.set_filing', customer_id=customer.id) }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="return_to" value="detail">
+          <input type="hidden" name="tax_month" value="{{ filing.tax_month.strftime('%Y-%m') }}">
+          <select name="is_filed" aria-label="{{ filing.tax_month.strftime('%Y 年 %m 月') }}报税状态"><option value="0" {% if not filing.is_filed %}selected{% endif %}>未报税</option><option value="1" {% if filing.is_filed %}selected{% endif %}>已报税</option></select>
+          <button class="button small" type="submit">保存</button>
+        </form></td></tr>
+      {% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+<section class="panel space-top">
+  <div class="section-head"><div><h2>标签分类</h2><p>可给客户关联多个分类。</p></div><a class="button small" href="{{ url_for('tags.manage') }}">管理分类</a></div>
+  {% if assigned_categories %}
+  <div class="tag-list">
+    {% for category in assigned_categories %}
+    <form method="post" action="{{ url_for('tags.unassign_category', customer_id=customer.id, category_id=category.id) }}" class="tag-item">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <span>{{ category.name }}</span><button type="submit" aria-label="移除{{ category.name }}">×</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% else %}<p>尚未关联标签分类。</p>{% endif %}
+  {% if available_categories %}
+  <form method="post" action="{{ url_for('tags.assign_category', customer_id=customer.id) }}" class="inline-form space-top">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <select name="category_id" aria-label="选择标签分类" required>
+      {% for category in available_categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}
+    </select>
+    <button class="button small" type="submit">关联分类</button>
+  </form>
+  {% endif %}
+</section>
+<section class="panel space-top"><div class="section-head"><div><h2>客户图片</h2><p>与该客户关联的票据、截图等资料。支持查看、改名、替换、下载和删除。</p></div><span class="count-pill">{{ images|length }} 张</span></div>
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('images.upload_customer', customer_id=customer.id) }}" class="upload-row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="file" name="image" accept="image/png,image/jpeg,image/webp" required aria-label="选择客户图片"><button class="button primary" type="submit">上传图片</button><small>PNG、JPEG、WebP，单张最多 10 MB</small></form>
+  {{ cards(images, 'customer', csrf_token) }}
+</section>
+<section class="danger-zone"><div><h2>删除客户</h2><p>同时删除该客户的月度记录和关联图片，此操作不能撤销。</p></div><form method="post" action="{{ url_for('customers.delete', customer_id=customer.id) }}" data-confirm="确定删除客户及其全部报税记录、图片吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger" type="submit">删除客户</button></form></section>
+{% endblock %}

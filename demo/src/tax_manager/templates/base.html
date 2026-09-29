@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}税务客户管理{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="{{ url_for('home') }}"><span class="brand-mark">税</span><span>客户与报税管理</span></a>
+      {% if session.get('user_id') %}
+      <nav aria-label="主导航">
+        <a href="{{ url_for('customers.index') }}">客户</a>
+        <a href="{{ url_for('images.unassigned') }}">图片库</a>
+        <a href="{{ url_for('tags.manage') }}">标签分类</a>
+      </nav>
+      {% endif %}
+      <div class="account">
+      {% if session.get('user_id') %}
+        <span>{{ session.get('username') }}</span>
+        <a href="{{ url_for('auth.change_password') }}">修改密码</a>
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="link-button" type="submit">退出</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('auth.login') }}">登录</a>
+      {% endif %}
+      </div>
+    </div>
+  </header>
+  <main class="page-shell">
+    {% with notices = get_flashed_messages(with_categories=true) %}
+      {% if notices %}
+      <div class="notices" aria-live="polite">
+        {% for category, message in notices %}<div class="notice {{ category }}">{{ message }}</div>{% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

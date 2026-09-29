@@ -1,0 +1,30 @@
+{% macro cards(images, kind, csrf_token) %}
+  {% if images %}<div class="image-grid">
+  {% for image in images %}
+    <article class="image-card">
+      <a class="image-preview" href="{{ url_for('images.file', kind=kind, image_id=image.id, action='view') }}" target="_blank" rel="noopener" aria-label="查看{{ image.original_name }}">
+        <img src="{{ url_for('images.file', kind=kind, image_id=image.id, action='view') }}" alt="{{ image.original_name }}" loading="lazy">
+      </a>
+      <div class="image-content">
+        <form method="post" action="{{ url_for('images.rename', kind=kind, image_id=image.id) }}" class="rename-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input name="original_name" value="{{ image.original_name }}" maxlength="255" aria-label="图片名称" required>
+          <button class="button small" type="submit">改名</button>
+        </form>
+        <p class="muted micro">{{ (image.size_bytes / 1024)|round(1) }} KB · {{ image.mime_type }}</p>
+        <div class="image-actions"><a class="button small subtle" href="{{ url_for('images.file', kind=kind, image_id=image.id, action='download') }}">下载</a>
+          <form method="post" enctype="multipart/form-data" action="{{ url_for('images.replace', kind=kind, image_id=image.id) }}" class="replace-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="button small subtle file-button">替换<input type="file" name="image" accept="image/png,image/jpeg,image/webp" required></label>
+            <button class="button small" type="submit">上传替换</button>
+          </form>
+          <form method="post" action="{{ url_for('images.delete', kind=kind, image_id=image.id) }}" data-confirm="确定删除这张图片吗？">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button small danger-text" type="submit">删除</button>
+          </form>
+        </div>
+      </div>
+    </article>
+  {% endfor %}
+  </div>{% else %}<div class="empty-state"><strong>还没有图片</strong><p>使用上方表单上传第一张图片。</p></div>{% endif %}
+{% endmacro %}

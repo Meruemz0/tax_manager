@@ -1,0 +1,23 @@
+# Private runtime configuration and uploaded customer data
+**/.env
+**/.env.*
+!**/.env.example
+**/uploads/
+**/.session-key
+
+# Python and local tooling
+**/.venv/
+**/.uv-cache/
+**/.pytest_cache/
+**/__pycache__/
+**/*.py[cod]
+**/.mypy_cache/
+**/.ruff_cache/
+*.log
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+**/.pytest_tmp_git/

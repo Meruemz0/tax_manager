@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}{{ '编辑客户' if editing else '新增客户' }} · 税务客户管理{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow">工作台 / 客户</div><h1>{{ '编辑客户' if editing else '新增客户' }}</h1><p>客户名称必填，其余资料可按需要补充。</p></div></div>
+<section class="panel form-panel">
+  <form method="post" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      <label>客户名称 <em>*</em><input name="name" value="{{ customer.get('name', '') }}" maxlength="200" required autofocus></label>
+      <label>税号<input name="tax_identifier" value="{{ customer.get('tax_identifier') or '' }}" maxlength="64"></label>
+      <label>联系人<input name="contact_name" value="{{ customer.get('contact_name') or '' }}" maxlength="100"></label>
+      <label>联系电话<input name="contact_phone" value="{{ customer.get('contact_phone') or '' }}" maxlength="50" inputmode="tel"></label>
+      <label>客户注册日期<input name="registered_on" type="date" value="{{ customer.get('registered_on') or '' }}" required></label>
+    </div>
+    <label>备注（最多 255 字）<textarea name="note" maxlength="255" rows="4">{{ customer.get('note') or '' }}</textarea></label>
+    <div class="form-actions"><button class="button primary" type="submit">{{ '保存修改' if editing else '添加客户' }}</button><a class="button subtle" href="{{ url_for('customers.index') }}">返回列表</a></div>
+  </form>
+</section>
+{% endblock %}

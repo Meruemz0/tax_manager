@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}首页 · 税务客户管理{% endblock %}
+{% block content %}
+<div class="login-layout">
+  <section class="login-intro">
+    <div class="eyebrow">TAX MANAGER</div>
+    <h1>客户与报税管理</h1>
+    <p>集中管理客户资料、本月申报状态和图片资料。客户信息仅向已登录用户开放。</p>
+    <div class="login-art" aria-hidden="true"><span>01</span><span>客户档案</span><span>02</span><span>申报状态</span><span>03</span><span>图片资料</span></div>
+  </section>
+  <section class="panel login-panel">
+    <div class="eyebrow">开始使用</div>
+    <h2>进入工作台</h2>
+    <p>请先登录网站账号，再查看和管理业务数据。</p>
+    {% if session.get('user_id') %}
+    <a class="button primary full" href="{{ url_for('customers.index') }}">进入工作台</a>
+    {% else %}
+    <a class="button primary full" href="{{ url_for('auth.login') }}">账号登录</a>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
