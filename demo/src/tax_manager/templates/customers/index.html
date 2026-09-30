@@ -7,7 +7,7 @@
   <a class="button primary" href="{{ url_for('customers.create') }}">＋ 新增客户</a>
 </div>
 <section class="panel">
-  <form method="get" class="stacked-form">
+  <form method="get" class="stacked-form home-filter-form">
     <div class="form-grid">
       <label>显示月份<input type="month" name="month" value="{{ selected_month }}" max="{{ current_month }}"></label>
       <label>名称或税号<input name="q" value="{{ filters.query }}" maxlength="100" placeholder="搜索客户"></label>
