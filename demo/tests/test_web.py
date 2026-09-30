@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from io import BytesIO
 
-from flask import render_template, session
+from tax_manager.web import render_template, session
 from PIL import Image
 import pytest
 
@@ -74,7 +74,7 @@ def test_session_key_is_created_and_reused(tmp_path):
     second = create_app(config)
     assert first.secret_key == second.secret_key
     assert len(first.secret_key) >= 32
-    assert (tmp_path / ".session-key").read_bytes() == first.secret_key
+    assert (tmp_path / ".session-key").read_bytes().hex() == first.secret_key
 
 
 def test_login_post_requires_csrf_token(tmp_path):
@@ -134,9 +134,9 @@ def test_customer_and_image_pages_render_edit_controls(tmp_path):
     with app.test_request_context("/"):
         session["user_id"] = 1
         session["username"] = "wfg1"
-        dashboard = render_template("customers/index.html", customers=[customer], filters=filters, current_month="2026-09", choices_by_kind={"taxpayer_identity": [], "service_type": [], "customer_source": []})
-        detail = render_template("customers/detail.html", customer=customer, images=[image])
-        gallery = render_template("images/unassigned.html", images=[image])
+        dashboard = render_template("customers/index.html", customers=[customer], filters=filters, current_month="2026-09", choices_by_kind={"taxpayer_identity": [], "service_type": [], "customer_source": []}).body.decode()
+        detail = render_template("customers/detail.html", customer=customer, images=[image]).body.decode()
+        gallery = render_template("images/unassigned.html", images=[image]).body.decode()
     assert 'name="filing_status"' in dashboard
     assert 'name="bookkeeping_status"' in dashboard
     assert 'href="/customers"' in dashboard
@@ -159,7 +159,7 @@ def test_customer_detail_renders_editable_history_for_each_month(tmp_path):
     ]
     with app.test_request_context("/customers/7"):
         session["user_id"] = 1
-        html = render_template("customers/detail.html", customer=customer, images=[], files=[], history=[{"month": row["tax_month"], "is_filed": row["is_filed"], "is_booked": False} for row in filings])
+        html = render_template("customers/detail.html", customer=customer, images=[], files=[], history=[{"month": row["tax_month"], "is_filed": row["is_filed"], "is_booked": False} for row in filings]).body.decode()
     assert 'name="tax_month" value="2026-08"' in html
     assert 'name="tax_month" value="2026-09"' in html
     assert "2026 年 08 月" in html

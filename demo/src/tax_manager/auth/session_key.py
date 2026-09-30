@@ -1,4 +1,4 @@
-"""Keep Flask's session signing key stable across restarts and workers."""
+"""Keep the session signing key stable across restarts and workers."""
 
 import os
 import secrets

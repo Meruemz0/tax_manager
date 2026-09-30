@@ -1,7 +1,7 @@
 """Customer records, monthly statuses, and the private customer home page."""
 
 from datetime import datetime
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from tax_manager.web import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from psycopg.errors import UniqueViolation
 
 from tax_manager.auth import login_required

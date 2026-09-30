@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from flask import render_template
+from tax_manager.web import render_template
 
 from tax_manager.app import create_app
 
@@ -25,7 +25,7 @@ def test_customer_detail_keeps_images_and_shows_new_fields_history_and_files(tmp
                 "id": 5, "original_name": "截图.png", "mime_type": "image/png", "size_bytes": 42,
             }], files=[{"id": 8, "original_name": "合同.bin", "size_bytes": 88}],
             assigned_categories=[], available_categories=[],
-        )
+        ).body.decode()
     for value in ("不可用", "一般纳税人", "代账", "转介绍", "完整备注内容", "已记账", "已报税", "截图.png", "合同.bin"):
         assert value in html
     assert "/customers/7/bookkeeping" in html

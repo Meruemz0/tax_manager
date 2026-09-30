@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import secrets
 
-from flask import current_app
+from tax_manager.web import current_app
 
 
 MAX_OTHER_FILE_BYTES = 1024 * 1024

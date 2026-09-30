@@ -1,6 +1,6 @@
 """User-defined customer tag choices grouped by business field."""
 
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
+from tax_manager.web import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 from psycopg.errors import UniqueViolation
 
 from tax_manager.auth import login_required

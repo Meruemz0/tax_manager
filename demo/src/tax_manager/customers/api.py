@@ -2,7 +2,7 @@
 
 import json
 
-from flask import Blueprint, current_app, jsonify, request, url_for
+from tax_manager.web import Blueprint, current_app, jsonify, request, url_for
 from psycopg.errors import UniqueViolation
 
 from tax_manager.auth import login_required

@@ -1,6 +1,6 @@
 """Authenticated UI for customer attachments that are not images."""
 
-from flask import Blueprint, abort, current_app, flash, redirect, request, send_file, url_for
+from tax_manager.web import Blueprint, abort, current_app, flash, redirect, request, send_file, url_for
 
 from tax_manager.auth import login_required
 from tax_manager.customer_files.storage import (

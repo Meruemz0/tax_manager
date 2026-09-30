@@ -54,18 +54,12 @@ def test_windows_launcher_uses_ssh_forwarding_for_database(tmp_path, monkeypatch
     monkeypatch.setattr("socket.create_connection", connect)
     observed = {}
 
-    class FakeServer:
-        def serve_forever(self):
-            observed["served"] = True
-
-        def server_close(self):
-            observed["closed"] = True
-
-    def fake_make_server(host, port, app, threaded):
+    def fake_serve(app, *, host, port, log_level):
         observed["database_url"] = app.config["DATABASE_URL"]
-        return FakeServer()
+        observed["served"] = True
+        assert (host, port, log_level) == ("0.0.0.0", 8000, "info")
 
-    monkeypatch.setattr(start_windows, "make_server", fake_make_server)
+    monkeypatch.setattr(start_windows.uvicorn, "run", fake_serve)
     monkeypatch.setattr(start_windows.webbrowser, "open", lambda url: True)
 
     assert start_windows.main() == 0
@@ -75,7 +69,7 @@ def test_windows_launcher_uses_ssh_forwarding_for_database(tmp_path, monkeypatch
     }
     assert launched[0][:4] == ["ssh", "-N", "-L", "127.0.0.1:15433:127.0.0.1:15432"]
     assert launched[0][-1] == "wfg1@192.0.2.10"
-    assert observed["served"] and observed["closed"] and process.stopped
+    assert observed["served"] and process.stopped
 
 
 def test_database_checker_uses_ssh_forwarding_without_printing_password(monkeypatch, capsys):

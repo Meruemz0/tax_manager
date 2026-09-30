@@ -8,7 +8,7 @@ import re
 import secrets
 import warnings
 
-from flask import current_app
+from tax_manager.web import current_app
 from PIL import Image, UnidentifiedImageError
 
 

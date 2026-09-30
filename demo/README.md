@@ -30,24 +30,24 @@ cp .env.example .env
 Linux 上启动：
 
 ```bash
-uv run --frozen --no-dev --env-file .env gunicorn --chdir src --bind 0.0.0.0:8000 --workers 2 'tax_manager.app:create_app()'
+uv run --frozen --no-dev --env-file .env uvicorn --app-dir src --factory tax_manager.app:create_app --host 0.0.0.0 --port 8000 --workers 2
 ```
 
 访问 `http://服务器地址:8000/` 查看公开首页；登录后进入 `http://服务器地址:8000/customers`。新数据库预置账号为 `wfg1`，但没有可用的公开初始密码。**首次登录前必须设置私有密码**；已有数据库也建议更换旧演示密码。在 `demo` 目录运行以下命令，按提示输入两次新密码（不会写入命令历史）：
 
 ```bash
-PYTHONPATH=src uv run --frozen --env-file .env flask --app tax_manager.app:create_app auth set-password wfg1
+PYTHONPATH=src uv run --frozen --env-file .env python -m tax_manager.cli auth set-password wfg1
 ```
 
-登录后也可在“修改密码”页面更换。登录失败按来源和账号分别限制尝试次数，计数共享在 PostgreSQL 中。未登录访问客户、报税和图片相关页面或接口会跳转到登录页。局域网以外开放访问时应先配置 HTTPS，并将 `COOKIE_SECURE=1`。
+从旧版 Flask 迁移后，原有浏览器会话需要重新登录；账号和业务数据无需迁移。登录后也可在“修改密码”页面更换。登录失败按来源和账号分别限制尝试次数，计数共享在 PostgreSQL 中。未登录访问客户、报税和图片相关页面或接口会跳转到登录页。局域网以外开放访问时应先配置 HTTPS，并将 `COOKIE_SECURE=1`。
 
-开发时可使用 Flask 自带服务器：
+开发时可使用 Uvicorn 自动重载：
 
 ```bash
-PYTHONPATH=src uv run --frozen --env-file .env flask --app tax_manager.app:create_app run --debug
+uv run --frozen --env-file .env uvicorn --app-dir src --factory tax_manager.app:create_app --reload
 ```
 
-Windows PowerShell 手动运行开发服务器时，先设置 `$env:PYTHONPATH = 'src'`，再运行上面命令中 `uv run` 开始的部分。Flask 自带服务器仅用于开发；正式运行使用 Gunicorn。
+Windows PowerShell 可直接运行上面的 `uv run` 命令。管理命令则先设置 `$env:PYTHONPATH = 'src'`。正式运行关闭 `--reload`，可用 `--workers 2` 启动两个进程。
 
 ## 使用方式
 
@@ -96,7 +96,7 @@ uv run --frozen pytest -q
 停止网站写入后，可检查数据库与图片目录是否一致：
 
 ```bash
-PYTHONPATH=src uv run --frozen --env-file .env flask --app tax_manager.app:create_app images check-files
+PYTHONPATH=src uv run --frozen --env-file .env python -m tax_manager.cli images check-files
 ```
 
 命令只报告缺失与孤立文件，不自动删除。缺失文件需要从备份恢复；孤立文件在核实后人工清理。图片写入会同步文件和目录，但意外断电、存储设备故障仍需依赖备份与上述检查。
@@ -105,4 +105,4 @@ PYTHONPATH=src uv run --frozen --env-file .env flask --app tax_manager.app:creat
 
 `src/tax_manager/auth` 负责登录和密码，`customers` 负责客户及月度状态，`tags` 负责标签分类，`images` 负责图片，`customer_files` 负责其他文件，`db` 负责连接，`templates` 与 `static` 提供网页界面。SQL 使用参数化查询，动态表名只从固定白名单选择。
 
-Flask（BSD-3-Clause）用于表单页面与会话；相比直接使用标准库 HTTP 服务，减少路由和模板代码。Psycopg 3 及其 binary 包（LGPL-3.0-only）连接 PostgreSQL；相比调用 `psql` 子进程，能使用参数化查询和事务。Pillow（MIT-CMU）校验上传图片的实际格式；相比只检查扩展名，可以拒绝伪装文件。Gunicorn（MIT）用于 Linux 部署。依赖版本锁在 `uv.lock`；这些项目在 2026 年仍有维护中的发布版本。应用本身不使用 LLM。
+FastAPI（MIT）处理路由和 API，Starlette（BSD-3-Clause）处理会话与模板响应，Uvicorn（BSD-3-Clause）运行 ASGI 服务。Psycopg 3 及其 binary 包（LGPL-3.0-only）连接 PostgreSQL；Pillow（MIT-CMU）校验上传图片的实际格式。依赖版本锁在 `uv.lock`。应用本身不使用 LLM。

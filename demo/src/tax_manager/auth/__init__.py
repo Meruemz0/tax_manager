@@ -5,7 +5,7 @@ import hashlib
 import secrets
 
 import click
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from tax_manager.web import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from tax_manager.auth.passwords import DUMMY_HASH, hash_password, verify_password
 from tax_manager.db import connect

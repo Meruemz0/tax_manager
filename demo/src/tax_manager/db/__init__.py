@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 
 import psycopg
-from flask import current_app
+from tax_manager.web import current_app
 from psycopg.rows import dict_row
 
 

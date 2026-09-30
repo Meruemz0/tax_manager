@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import click
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
+from tax_manager.web import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
 from tax_manager.auth import login_required
 from tax_manager.db import connect
