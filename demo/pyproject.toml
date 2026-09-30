@@ -5,7 +5,6 @@ description = "Small customer and tax filing web app"
 requires-python = ">=3.11"
 dependencies = [
     "psycopg[binary]==3.3.6",
-    "Pillow==12.3.0",
     "fastapi>=0.142.1",
     "uvicorn>=0.54.0",
     "python-multipart>=0.0.32",

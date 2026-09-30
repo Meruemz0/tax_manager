@@ -73,6 +73,12 @@ def test_new_customer_defaults_to_available_and_current_china_timestamp(tmp_path
     assert len(inserts) == 1
     assert "registered_at" in inserts[0][0] and "is_available" in inserts[0][0]
     assert fixed in inserts[0][1] and True in inserts[0][1]
+    unavailable = client.post("/customers/new", data={
+        "csrf_token": "token", "name": "unavailable", "is_available": "0",
+    })
+    assert unavailable.status_code == 302
+    assert inserts[1][1].count(fixed) == 2
+    assert False in inserts[1][1]
 
 
 
@@ -80,6 +86,8 @@ def test_customer_edit_saves_availability_and_choice_fields(tmp_path, monkeypatc
     from tax_manager.app import create_app
 
     app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
+    fixed = datetime(2026, 9, 30, 13, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
+    monkeypatch.setattr("tax_manager.customers.china_now", lambda: fixed)
     updates = []
 
     class Result:
@@ -125,3 +133,4 @@ def test_customer_edit_saves_availability_and_choice_fields(tmp_path, monkeypatc
     assert len(updates) == 1
     assert "is_available" in updates[0][0] and "taxpayer_identity_id" in updates[0][0]
     assert False in updates[0][1] and 3 in updates[0][1] and 4 in updates[0][1] and 5 in updates[0][1]
+    assert fixed in updates[0][1]

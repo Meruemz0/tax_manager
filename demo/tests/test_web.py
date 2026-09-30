@@ -1,9 +1,7 @@
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
-from io import BytesIO
 
 from tax_manager.web import render_template, session
-from PIL import Image
 import pytest
 
 from tax_manager.app import create_app
@@ -20,15 +18,11 @@ def test_public_home_is_reachable_without_database_access(tmp_path, monkeypatch)
 
 @pytest.mark.parametrize("method,path", [
     ("GET", "/customers"), ("GET", "/customers/new"), ("GET", "/customers/7"),
-    ("GET", "/customers/7/edit"), ("GET", "/unassigned"),
-    ("GET", "/images/customer/3/view"), ("GET", "/images/unassigned/3/download"),
+    ("GET", "/customers/7/edit"),
     ("POST", "/customers/new"), ("POST", "/customers/7/edit"),
     ("POST", "/customers/7/filing"), ("POST", "/customers/7/delete"),
-    ("POST", "/customers/7/images"), ("POST", "/unassigned/images"),
-    ("POST", "/images/customer/3/rename"), ("POST", "/images/customer/3/replace"),
-    ("POST", "/images/customer/3/delete"),
 ])
-def test_customer_and_image_routes_require_login(tmp_path, method, path):
+def test_customer_routes_require_login(tmp_path, method, path):
     app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
     client = app.test_client()
     with client.session_transaction() as state:
@@ -121,7 +115,7 @@ def test_login_reads_site_users_table(tmp_path, monkeypatch):
     assert any("FROM site_users" in sql and params == ("wfg1",) for sql, params in statements)
 
 
-def test_customer_and_image_pages_render_edit_controls(tmp_path):
+def test_customer_page_renders_filter_controls(tmp_path):
     app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
     customer = {
         "id": 7, "name": "测试客户", "tax_identifier": "T-7", "contact_name": "张三",
@@ -130,20 +124,14 @@ def test_customer_and_image_pages_render_edit_controls(tmp_path):
     }
     from tax_manager.customers.search import parse_home_filters
     filters = parse_home_filters({}, date(2026, 9, 29))
-    image = {"id": 3, "original_name": "截图.png", "mime_type": "image/png", "size_bytes": 1024}
     with app.test_request_context("/"):
         session["user_id"] = 1
         session["username"] = "wfg1"
         dashboard = render_template("customers/index.html", customers=[customer], filters=filters, current_month="2026-09", choices_by_kind={"taxpayer_identity": [], "service_type": [], "customer_source": []}).body.decode()
-        detail = render_template("customers/detail.html", customer=customer, images=[image]).body.decode()
-        gallery = render_template("images/unassigned.html", images=[image]).body.decode()
     assert 'name="filing_status"' in dashboard
     assert 'name="bookkeeping_status"' in dashboard
     assert 'href="/customers"' in dashboard
-    assert 'href="/unassigned"' in dashboard
-    assert '/customers/7/edit' in detail
-    assert '/images/customer/3/replace' in detail
-    assert '/images/unassigned/3/delete' in gallery
+    assert 'href="/unassigned"' not in dashboard
 
 
 def test_customer_detail_renders_editable_history_for_each_month(tmp_path):
@@ -159,60 +147,13 @@ def test_customer_detail_renders_editable_history_for_each_month(tmp_path):
     ]
     with app.test_request_context("/customers/7"):
         session["user_id"] = 1
-        html = render_template("customers/detail.html", customer=customer, images=[], files=[], history=[{"month": row["tax_month"], "is_filed": row["is_filed"], "is_booked": False} for row in filings]).body.decode()
+        html = render_template("customers/detail.html", customer=customer, files=[], history=[{"month": row["tax_month"], "is_filed": row["is_filed"], "is_booked": False} for row in filings]).body.decode()
     assert 'name="tax_month" value="2026-08"' in html
     assert 'name="tax_month" value="2026-09"' in html
     assert "2026 年 08 月" in html
     assert "2026 年 09 月" in html
 
 
-def test_upload_saves_file_and_metadata(tmp_path, monkeypatch):
-    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
-    writes = []
-
-    class FakeResult:
-        def __init__(self, row=None):
-            self.row = row
-
-        def fetchone(self):
-            return self.row
-
-    class FakeConnection:
-        def execute(self, statement, params=None):
-            if "FROM site_users" in statement:
-                return FakeResult({"id": 1, "username": "wfg1"})
-            if "FROM customers" in statement:
-                return FakeResult({"id": 7})
-            if "INSERT INTO customer_images" in statement:
-                writes.append(params)
-            return FakeResult()
-
-    @contextmanager
-    def fake_connect():
-        yield FakeConnection()
-
-    monkeypatch.setattr("tax_manager.auth.connect", fake_connect)
-    monkeypatch.setattr("tax_manager.images.connect", fake_connect)
-    picture = BytesIO()
-    Image.new("RGB", (2, 2), "white").save(picture, format="PNG")
-    picture.seek(0)
-    client = app.test_client()
-    with client.session_transaction() as state:
-        state["user_id"] = 1
-        state["csrf_token"] = "token"
-    response = client.post(
-        "/customers/7/images",
-        data={"csrf_token": "token", "image": (picture, "capture.png")},
-        content_type="multipart/form-data",
-    )
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/customers/7")
-    assert len(writes) == 1
-    assert writes[0][0] == 7
-    assert writes[0][2] == "capture.png"
-    assert writes[0][3] == "image/png"
-    stored = list((tmp_path / "customer").rglob("*"))
-    assert any(path.is_file() and path.stat().st_size == writes[0][4] for path in stored)
 
 
 def test_customer_create_and_filing_update_use_form_values(tmp_path, monkeypatch):
@@ -369,7 +310,7 @@ def test_edit_registration_date_backfills_earlier_months(tmp_path, monkeypatch):
             statements.append((statement, params))
             if "FROM site_users" in statement:
                 return Result({"id": 1, "username": "wfg1"})
-            if "SELECT registered_on, registered_at, is_available FROM customers" in statement:
+            if "SELECT registered_on, registered_at, is_available, deactivated_at FROM customers" in statement:
                 return Result({"registered_on": date(2024, 3, 10)})
             if "UPDATE customers" in statement:
                 return Result({"id": 7})
@@ -414,7 +355,7 @@ def test_edit_cannot_erase_earlier_filed_month(tmp_path, monkeypatch):
         def execute(self, statement, params=None):
             if "FROM site_users" in statement:
                 return Result({"id": 1, "username": "wfg1"})
-            if "SELECT registered_on, registered_at, is_available FROM customers" in statement:
+            if "SELECT registered_on, registered_at, is_available, deactivated_at FROM customers" in statement:
                 return Result({"registered_on": date(2024, 1, 15)})
             if "SELECT 1 FROM monthly_filings" in statement:
                 return Result({"exists": 1})
@@ -439,35 +380,6 @@ def test_edit_cannot_erase_earlier_filed_month(tmp_path, monkeypatch):
     assert "已报税" in response.get_data(as_text=True)
 
 
-def test_failed_image_metadata_write_removes_new_file(tmp_path, monkeypatch):
-    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
-
-    class Result:
-        def fetchone(self):
-            return {"id": 7, "username": "wfg1"}
-
-    class Connection:
-        def execute(self, statement, params=None):
-            if "INSERT INTO customer_images" in statement:
-                raise RuntimeError("simulated database failure")
-            return Result()
-
-    @contextmanager
-    def fake_connect():
-        yield Connection()
-
-    monkeypatch.setattr("tax_manager.auth.connect", fake_connect)
-    monkeypatch.setattr("tax_manager.images.connect", fake_connect)
-    picture = BytesIO()
-    Image.new("RGB", (2, 2), "white").save(picture, format="PNG")
-    picture.seek(0)
-    client = app.test_client()
-    with client.session_transaction() as state:
-        state["user_id"] = 1
-        state["csrf_token"] = "token"
-    with pytest.raises(RuntimeError, match="simulated database failure"):
-        client.post("/customers/7/images", data={"csrf_token": "token", "image": (picture, "capture.png")}, content_type="multipart/form-data")
-    assert not list((tmp_path / "customer").rglob("*")) or not any(path.is_file() for path in (tmp_path / "customer").rglob("*"))
 
 
 def test_rate_limit_rejects_login_before_password_hashing(tmp_path, monkeypatch):
@@ -499,36 +411,6 @@ def test_rate_limit_rejects_login_before_password_hashing(tmp_path, monkeypatch)
     assert response.status_code == 429
 
 
-def test_rename_does_not_claim_success_after_concurrent_delete(tmp_path, monkeypatch):
-    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
-
-    class Result:
-        def __init__(self, row):
-            self.row = row
-
-        def fetchone(self):
-            return self.row
-
-    class Connection:
-        def execute(self, statement, params=None):
-            if "FROM site_users" in statement:
-                return Result({"id": 1, "username": "wfg1"})
-            if "SELECT id, storage_key" in statement:
-                return Result({"id": 3, "storage_key": "a" * 32, "original_name": "old.png", "mime_type": "image/png", "size_bytes": 10, "customer_id": None})
-            return Result(None)
-
-    @contextmanager
-    def fake_connect():
-        yield Connection()
-
-    monkeypatch.setattr("tax_manager.auth.connect", fake_connect)
-    monkeypatch.setattr("tax_manager.images.connect", fake_connect)
-    client = app.test_client()
-    with client.session_transaction() as state:
-        state["user_id"] = 1
-        state["csrf_token"] = "token"
-    response = client.post("/images/unassigned/3/rename", data={"csrf_token": "token", "original_name": "new.png"})
-    assert response.status_code == 404
 
 
 def test_password_reset_command_updates_existing_user(tmp_path, monkeypatch):
@@ -558,30 +440,6 @@ def test_password_reset_command_updates_existing_user(tmp_path, monkeypatch):
     assert verify_password("new-test-password", updates[0][0])
 
 
-def test_image_check_command_reports_orphan_file(tmp_path, monkeypatch):
-    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
-
-    class Result:
-        def fetchall(self):
-            return []
-
-    class Connection:
-        def execute(self, statement, params=None):
-            return Result()
-
-    @contextmanager
-    def fake_connect():
-        yield Connection()
-
-    monkeypatch.setattr("tax_manager.images.connect", fake_connect)
-    from tax_manager.images.storage import file_path
-    with app.app_context():
-        orphan = file_path("unassigned", "a" * 32)
-        orphan.parent.mkdir(parents=True)
-        orphan.write_bytes(b"orphan")
-    result = app.test_cli_runner().invoke(args=["images", "check-files"])
-    assert result.exit_code != 0
-    assert "孤立文件" in result.output
 
 
 def test_customer_delete_removes_month_records_and_image_file(tmp_path, monkeypatch):
@@ -639,90 +497,3 @@ def test_customer_delete_removes_month_records_and_image_file(tmp_path, monkeypa
     assert any("DELETE FROM customer_files" in sql for sql in statements)
     assert any("DELETE FROM monthly_filings" in sql for sql in statements)
     assert any("DELETE FROM customers" in sql for sql in statements)
-
-
-def test_replace_removes_locked_previous_file(tmp_path, monkeypatch):
-    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
-    from tax_manager.images.storage import file_path
-    old_key, current_key = "a" * 32, "b" * 32
-    with app.app_context():
-        previous = file_path("unassigned", current_key)
-        previous.parent.mkdir(parents=True)
-        previous.write_bytes(b"previous")
-    saved = []
-
-    class Result:
-        def __init__(self, row=None):
-            self.row = row
-
-        def fetchone(self):
-            return self.row
-
-    class Connection:
-        def execute(self, statement, params=None):
-            if "FROM site_users" in statement:
-                return Result({"id": 1, "username": "wfg1"})
-            if "FROM unassigned_images" in statement:
-                key = current_key if "FOR UPDATE" in statement else old_key
-                return Result({"id": 3, "storage_key": key, "original_name": "old.png", "mime_type": "image/png", "size_bytes": 8, "customer_id": None})
-            if "UPDATE unassigned_images" in statement:
-                saved.append(params)
-                return Result({"id": 3})
-            return Result()
-
-    @contextmanager
-    def fake_connect():
-        yield Connection()
-
-    monkeypatch.setattr("tax_manager.auth.connect", fake_connect)
-    monkeypatch.setattr("tax_manager.images.connect", fake_connect)
-    picture = BytesIO()
-    Image.new("RGB", (2, 2), "white").save(picture, format="PNG")
-    picture.seek(0)
-    client = app.test_client()
-    with client.session_transaction() as state:
-        state["user_id"] = 1
-        state["csrf_token"] = "token"
-    response = client.post("/images/unassigned/3/replace", data={"csrf_token": "token", "image": (picture, "new.png")}, content_type="multipart/form-data")
-    assert response.status_code == 302
-    assert saved and not previous.exists()
-    with app.app_context():
-        assert file_path("unassigned", saved[0][0]).is_file()
-
-
-def test_image_download_requires_login_and_serves_private_file(tmp_path, monkeypatch):
-    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
-    from tax_manager.images.storage import file_path
-    key = "c" * 32
-    with app.app_context():
-        path = file_path("unassigned", key)
-        path.parent.mkdir(parents=True)
-        path.write_bytes(b"image bytes")
-    client = app.test_client()
-    url = "/images/unassigned/3/download"
-    assert client.get(url).headers["Location"].endswith("/login")
-    class Result:
-        def __init__(self, row):
-            self.row = row
-
-        def fetchone(self):
-            return self.row
-
-    class Connection:
-        def execute(self, statement, params=None):
-            if "FROM site_users" in statement:
-                return Result({"id": 1, "username": "wfg1"})
-            return Result({"id": 3, "storage_key": key, "original_name": "capture.png", "mime_type": "image/png", "size_bytes": 11, "customer_id": None})
-
-    @contextmanager
-    def fake_connect():
-        yield Connection()
-
-    monkeypatch.setattr("tax_manager.auth.connect", fake_connect)
-    monkeypatch.setattr("tax_manager.images.connect", fake_connect)
-    with client.session_transaction() as state:
-        state["user_id"] = 1
-    response = client.get(url)
-    assert response.status_code == 200
-    assert response.data == b"image bytes"
-    assert response.headers["Cache-Control"] == "private, no-store"

@@ -1,5 +1,4 @@
 {% extends 'base.html' %}
-{% from 'images/_cards.html' import cards %}
 {% block title %}{{ customer.name }} · 税务客户管理{% endblock %}
 {% block content %}
 {% set available = customer.get('is_available', true) %}
@@ -7,7 +6,7 @@
 <div class="page-heading"><div><div class="eyebrow"><a href="{{ url_for('customers.index') }}">首页</a> / 客户详情</div><h1>{{ customer.name }}</h1><p>客户编号 #{{ customer.id }} · 注册时间 {{ registered_at_china if registered_at_china is defined else (customer.registered_on or '—') }}</p></div><a class="button subtle" href="{{ url_for('customers.edit', customer_id=customer.id) }}">编辑资料</a></div>
 <div class="detail-grid">
   <section class="panel">
-    <div class="section-head"><h2>客户基本信息</h2><span class="badge {{ 'available' if available else 'unavailable' }}">{{ '可用' if available else '不可用' }}</span></div>
+    <div class="section-head"><h2>客户基本信息</h2><div class="availability-status"><span class="badge {{ 'available' if available else 'unavailable' }}">{{ '可用' if available else '不可用' }}</span>{% if not available %}<small class="availability-time">注销时间：{{ customer.get('deactivated_at')|china_hour or '未记录' }}</small>{% endif %}</div></div>
     <dl class="details">
       <div><dt>名称</dt><dd>{{ customer.name }}</dd></div>
       <div><dt>税号</dt><dd>{{ customer.tax_identifier or '—' }}</dd></div>
@@ -70,11 +69,6 @@
   {% endif %}
 </section>
 <section class="panel space-top">
-  <div class="section-head"><div><h2>客户图片</h2><p>保留原有的查看、改名、替换、下载和删除功能。</p></div><span class="count-pill">{{ images|length }} 张</span></div>
-  <form method="post" enctype="multipart/form-data" action="{{ url_for('images.upload_customer', customer_id=customer.id) }}" class="upload-row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="file" name="image" accept="image/png,image/jpeg,image/webp" required aria-label="选择客户图片"><button class="button primary" type="submit">上传图片</button><small>PNG、JPEG、WebP，单张最多 10 MB</small></form>
-  {{ cards(images, 'customer', csrf_token) }}
-</section>
-<section class="panel space-top">
   <div class="section-head"><div><h2>其他文件</h2><p>任意格式，单个最多 1 MB，每个客户最多 10 个；下载时作为附件保存。</p></div><span class="count-pill">{{ files|length if files is defined else 0 }}/10</span></div>
   <form method="post" enctype="multipart/form-data" action="{{ url_for('customer_files.upload', customer_id=customer.id) }}" class="upload-row">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -91,5 +85,5 @@
   </tbody></table></div>
   {% else %}<p>暂无其他文件。</p>{% endif %}
 </section>
-<section class="danger-zone"><div><h2>删除客户</h2><p>同时删除该客户的记账、报税记录、图片和其他文件，此操作不能撤销。</p></div><form method="post" action="{{ url_for('customers.delete', customer_id=customer.id) }}" data-confirm="确定删除客户及其全部月度记录和文件吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger" type="submit">删除客户</button></form></section>
+<section class="danger-zone"><div><h2>删除客户</h2><p>同时删除该客户的记账、报税记录和其他文件，此操作不能撤销。</p></div><form method="post" action="{{ url_for('customers.delete', customer_id=customer.id) }}" data-confirm="确定删除客户及其全部月度记录和文件吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger" type="submit">删除客户</button></form></section>
 {% endblock %}

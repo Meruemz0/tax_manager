@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from tax_manager.auth.session_key import load_or_create_session_key
+from tax_manager.customers.availability import format_china_hour
 from tax_manager.web import BodyLimitMiddleware, Blueprint, get_flashed_messages, render_template, session, url_for
 
 
@@ -37,6 +38,7 @@ def create_app(test_config: dict | None = None) -> FastAPI:
     app.secret_key = load_or_create_session_key(storage_dir).hex()
     app.logger = logging.getLogger("tax_manager")
     app.state.templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+    app.state.templates.env.filters["china_hour"] = format_china_hour
     app.state.templates.env.globals.update(
         url_for=url_for, session=session, get_flashed_messages=get_flashed_messages
     )
@@ -69,14 +71,13 @@ def create_app(test_config: dict | None = None) -> FastAPI:
     from tax_manager.auth import blueprint as auth_blueprint
     from tax_manager.customers import blueprint as customers_blueprint
     from tax_manager.customers.api import blueprint as customer_api_blueprint
-    from tax_manager.images import blueprint as images_blueprint
     from tax_manager.tags import blueprint as tags_blueprint
     from tax_manager.customer_files import blueprint as customer_files_blueprint
 
     app.state.route_params = {}
     for item in (
         main, auth_blueprint, customers_blueprint, customer_api_blueprint,
-        images_blueprint, tags_blueprint, customer_files_blueprint,
+        tags_blueprint, customer_files_blueprint,
     ):
         for route in item.router.routes:
             app.state.route_params[route.name] = re.findall(

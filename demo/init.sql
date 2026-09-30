@@ -1,6 +1,6 @@
 -- Run against the intended database (tax_db by default).
 -- This script is safe to rerun: existing customer, filing, and login rows are preserved.
--- Images are files in a persistent, private directory; these tables store metadata only.
+-- Legacy image tables remain for compatibility with existing databases; new uploads are disabled.
 
 BEGIN;
 

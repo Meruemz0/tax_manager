@@ -17,7 +17,6 @@ from tax_manager.customers.validation import (
     optional_choice_id, validate_filing_month,
 )
 from tax_manager.db import connect
-from tax_manager.images.storage import InvalidImage, read_image, remove_image, save_image
 
 
 blueprint = Blueprint("customer_api", __name__)
@@ -68,7 +67,6 @@ def monthly_states(raw, registered_on, label: str) -> dict:
 @blueprint.post("/api/customers")
 @login_required
 def create_customer():
-    created_images: list[str] = []
     created_files: list[str] = []
     committed = False
     try:
@@ -84,10 +82,8 @@ def create_customer():
         general_ids = {optional_choice_id(value, "其他标签") for value in raw_general_ids}
         if None in general_ids or len(general_ids) > 100:
             raise ValidationError("其他标签选项无效或数量过多")
-        image_uploads = [
-            read_image(file.stream, file.filename)
-            for file in request.files.getlist("images") if file.filename
-        ]
+        if request.files.getlist("images"):
+            raise ValidationError("图片上传功能已取消")
         other_uploads = [
             read_other_file(file.stream, file.filename)
             for file in request.files.getlist("other_files") if file.filename
@@ -105,13 +101,14 @@ def create_customer():
             row = conn.execute(
                 """INSERT INTO customers
                    (name, tax_identifier, contact_name, contact_phone, note,
-                    registered_on, registered_at, is_available,
+                    registered_on, registered_at, is_available, deactivated_at,
                     taxpayer_identity_id, service_type_id, customer_source_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    RETURNING id""",
                 (data.name, data.tax_identifier, data.contact_name, data.contact_phone,
                  data.note, registered_on, registered_at,
                  True if data.is_available is None else data.is_available,
+                 china_now() if data.is_available is False else None,
                  data.taxpayer_identity_id, data.service_type_id, data.customer_source_id),
             ).fetchone()
             customer_id = row["id"]
@@ -139,15 +136,6 @@ def create_customer():
                        VALUES (%s, %s)""",
                     (customer_id, category_id),
                 )
-            for upload in image_uploads:
-                key = save_image("customer", upload)
-                created_images.append(key)
-                conn.execute(
-                    """INSERT INTO customer_images
-                       (customer_id, storage_key, original_name, mime_type, size_bytes)
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (customer_id, key, upload.original_name, upload.mime_type, upload.size_bytes),
-                )
             for upload in other_uploads:
                 key = save_other_file(upload)
                 created_files.append(key)
@@ -158,7 +146,7 @@ def create_customer():
                     (customer_id, key, upload.original_name, upload.size_bytes),
                 )
         committed = True
-    except (ValidationError, InvalidImage, InvalidOtherFile) as exc:
+    except (ValidationError, InvalidOtherFile) as exc:
         return jsonify({"error": str(exc)}), 400
     except UniqueViolation:
         return jsonify({"error": "税号或标签已存在"}), 409
@@ -167,11 +155,6 @@ def create_customer():
     finally:
         # A successful transaction keeps the files; failed writes roll back metadata.
         if not committed:
-            for key in created_images:
-                try:
-                    remove_image("customer", key)
-                except OSError:
-                    current_app.logger.exception("Failed to clean up image after API failure")
             for key in created_files:
                 try:
                     remove_other_file(key)

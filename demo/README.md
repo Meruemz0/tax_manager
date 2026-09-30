@@ -1,6 +1,6 @@
 # 税务客户管理 Demo
 
-一个供局域网使用的小型网页：公开首页可直接访问；查看客户信息、调用业务接口、更新中国时间逐月保存的报税状态、管理标签分类以及管理图片均需先登录。图片可上传、预览、改名、替换、下载和删除。客户删除会同时删除其月度记录和关联图片。登录账号从 PostgreSQL `site_users` 表读取。
+一个供局域网使用的小型网页：公开首页可直接访问；查看客户信息、调用业务接口、更新按中国时间逐月保存的记账与报税状态、管理标签分类和客户其他文件均需先登录。登录账号从 PostgreSQL `site_users` 表读取。
 
 ## 准备数据库
 
@@ -8,7 +8,9 @@
 
 **已有数据库先升级至逐月记录和标签分类：** 关闭正在运行的网站，在 Navicat 对同一个 `tax_db` 运行 [upgrade_v2.sql](upgrade_v2.sql)，然后重新双击 `启动网站.bat`。这是在已执行 `demo/init.sql` 的基础上运行的增量脚本，不要删除数据库，也不要重新导入测试数据。它把现有客户的注册日期初始化为建档时间的中国日期，从注册月份到当前中国月份补齐“未报税”记录；已有“已报税”记录不会被覆盖。旧备注如超过 255 字，脚本会报错并回滚，请先检查 `SELECT id, name, length(note) FROM customers WHERE length(note) > 255;`，人工缩短后重新运行。新数据库也应按 `init.sql`、`upgrade_v2.sql` 的顺序运行。
 
-**本次功能升级：** 关闭网站，在 Navicat 对同一个 `tax_db` 运行 [upgrade_v3.sql](upgrade_v3.sql)，确认执行成功后再启动网站。它以旧版 `registered_on` 的中国时间零点补齐 `registered_at`，新增“可用”状态、三类单选标签、独立的逐月记账表和其他文件表；已有报税、客户、图片和通用标签保留。新数据库依次执行 `init.sql`、`upgrade_v2.sql`、`upgrade_v3.sql`。三个脚本不可跳步；本次脚本可重复运行。
+**上一版功能升级：** 关闭网站，在 Navicat 对同一个 `tax_db` 运行 [upgrade_v3.sql](upgrade_v3.sql)，确认执行成功后再启动网站。它以旧版 `registered_on` 的中国时间零点补齐 `registered_at`，新增“可用”状态、三类单选标签、独立的逐月记账表和其他文件表；已有报税、客户、图片和通用标签保留。新数据库依次执行 `init.sql`、`upgrade_v2.sql`、`upgrade_v3.sql`。三个脚本不可跳步；本次脚本可重复运行。
+
+**注销时间升级：** 关闭网站后，在 Navicat 对同一个 `tax_db` 执行 [upgrade_v4.sql](upgrade_v4.sql)，成功后再启动网站。该脚本新增 `deactivated_at` 字段，可重复执行，不会修改已有客户记录。已有不可用客户的历史注销时间无法还原，详情页显示“未记录”。新数据库按 `init.sql`、`upgrade_v2.sql`、`upgrade_v3.sql`、`upgrade_v4.sql` 顺序执行。
 
 ## 安装与运行
 
@@ -39,7 +41,7 @@ uv run --frozen --no-dev --env-file .env uvicorn --app-dir src --factory tax_man
 PYTHONPATH=src uv run --frozen --env-file .env python -m tax_manager.cli auth set-password wfg1
 ```
 
-从旧版 Flask 迁移后，原有浏览器会话需要重新登录；账号和业务数据无需迁移。登录后也可在“修改密码”页面更换。登录失败按来源和账号分别限制尝试次数，计数共享在 PostgreSQL 中。未登录访问客户、报税和图片相关页面或接口会跳转到登录页。局域网以外开放访问时应先配置 HTTPS，并将 `COOKIE_SECURE=1`。
+从旧版 Flask 迁移后，原有浏览器会话需要重新登录；账号和业务数据无需迁移。登录后也可在“修改密码”页面更换。登录失败按来源和账号分别限制尝试次数，计数共享在 PostgreSQL 中。未登录访问客户、报税和其他文件相关页面或接口会跳转到登录页。局域网以外开放访问时应先配置 HTTPS，并将 `COOKIE_SECURE=1`。
 
 开发时可使用 Uvicorn 自动重载：
 
@@ -52,14 +54,13 @@ Windows PowerShell 可直接运行上面的 `uv run` 命令。管理命令则先
 ## 使用方式
 
 - **首页**：右上角“月份选择”用于选择某年某月，默认中国时间当前月；未设置筛选条件时，只显示截至所选月已在本公司注册且目前标记为“可用”的客户。显示名称、税号、所选月记账与报税状态、纳税人身份、服务类型、客户来源及备注前 20 字。点击“筛选”会在客户列表右侧展开窄面板，不改变表格宽度。名称/税号、可用状态、三类标签、所选月记账与报税状态、注册日期区间可以组合筛选所有客户。选择年月、筛选和清除筛选都只更新客户列表与统计，无需刷新整页；清除筛选保留已选年月。在所选月尚未注册的客户，其该月状态显示“—”。
-- **客户详情**：保留原有图片功能；显示完整备注、联系人、可用状态和两个独立的月度历史状态。两种月度状态固定为“已 / 未”，可逐月修改，已完成显示绿色，未完成显示红色。注册时间默认当前中国时间，可用状态默认“可用”。将注册时间改晚且此前存在已记账或已报税记录时会拒绝修改。
+- **客户详情**：显示完整备注、联系人、可用状态和两个独立的月度历史状态。不可用时在状态下显示注销时间，按中国时间精确到小时；恢复可用会清空该时间，再次设为不可用时重新记录。两种月度状态固定为“已 / 未”，可逐月修改，已完成显示绿色，未完成显示红色。注册时间默认当前中国时间，可用状态默认“可用”。将注册时间改晚且此前存在已记账或已报税记录时会拒绝修改。
 - **标签分类**：在页面中分别管理“纳税人身份”“服务类型”“客户来源”的单选值，以及旧版“其他标签”。记账、报税状态不在标签页管理。API `GET /api/tag-categories?kind=service_type` 查询，`POST /api/tag-categories` 创建，例如 `{"kind":"service_type","name":"代理记账"}`。kind 可为 `taxpayer_identity`、`service_type`、`customer_source`、`general`；省略时按 `general` 处理。
-- **其他文件**：详情页可上传、改名、下载和删除任意格式文件；单个文件最多 1 MiB，每个客户最多 10 个。文件经登录校验并强制作为附件下载。客户删除时同时清理月度记录、图片和其他文件。
-- **图片库**：保留无归属图片及客户图片的预览、改名、替换、下载和删除；只接受真实 PNG、JPEG、WebP，单张最多 10 MB。
+- **其他文件**：详情页可上传、改名、下载和删除任意格式文件；单个文件最多 1 MiB，每个客户最多 10 个。文件经登录校验并强制作为附件下载。客户删除时同时清理月度记录和其他文件；如客户有旧版图片，也会清理这些历史图片。
 
 ### 一次创建完整客户的 API
 
-`POST /api/customers` 需要已登录的 Cookie 和页面中的 `csrf_token`（请求头 `X-CSRF-Token`）。支持 `application/json`，只有 `name` 必填；空缺的注册时间使用中国时间当前时刻，可用状态默认 true。示例 JSON：
+`POST /api/customers` 需要已登录的 Cookie 和页面中的 `csrf_token`（请求头 `X-CSRF-Token`）。支持 `application/json`，只有 `name` 必填；空缺的注册时间使用中国时间当前时刻，可用状态默认 true。创建时如果 `is_available` 为 false，会记录当前注销时间。示例 JSON：
 
 ```json
 {
@@ -79,7 +80,7 @@ Windows PowerShell 可直接运行上面的 `uv run` 命令。管理命令则先
 }
 ```
 
-三种单选字段的 ID 来自相应 kind 的标签 API；`general_tag_ids` 是可选的旧版多选标签。历史月份必须处于该客户注册月份至当前中国月份之间，状态使用 JSON 布尔值。成功返回 HTTP 201、客户 ID 与详情页地址。若需一并上传客户图片和其他文件，改用 `multipart/form-data`：`payload` 字段放上述 JSON，图片用多个 `images` 字段，其他文件用多个 `other_files` 字段。图片与文件资料在同一数据库事务中保存；上传总请求最大 64 MiB。页面新增客户表单先填写基本字段，再到详情页管理历史月份与文件。
+三种单选字段的 ID 来自相应 kind 的标签 API；`general_tag_ids` 是可选的旧版多选标签。历史月份必须处于该客户注册月份至当前中国月份之间，状态使用 JSON 布尔值。成功返回 HTTP 201、客户 ID 与详情页地址。若需一并上传其他文件，改用 `multipart/form-data`：`payload` 字段放上述 JSON，其他文件用多个 `other_files` 字段。上传总请求最大 64 MiB。`images` 上传字段已停用，传入时返回 HTTP 400。页面新增客户表单先填写基本字段，再到详情页管理历史月份与文件。
 
 ### 数据位置与备份
 
@@ -93,16 +94,10 @@ uv run --frozen pytest -q
 
 需要同时备份 PostgreSQL 和 `STORAGE_DIR`。删除操作会立即移除数据；如需恢复，请从对应时间点的数据库和文件备份一起恢复。数据库提交后若文件清理失败，页面会提示，服务器日志会记录错误；此时可能留有孤立文件，需要人工清理。
 
-停止网站写入后，可检查数据库与图片目录是否一致：
-
-```bash
-PYTHONPATH=src uv run --frozen --env-file .env python -m tax_manager.cli images check-files
-```
-
-命令只报告缺失与孤立文件，不自动删除。缺失文件需要从备份恢复；孤立文件在核实后人工清理。图片写入会同步文件和目录，但意外断电、存储设备故障仍需依赖备份与上述检查。
+旧版图片页面与 API 已移除。旧版 `customer_images`、`unassigned_images` 表及对应文件不会因本次升级自动删除，以免丢失已有资料。若旧客户被删除，其关联的历史图片会一并清理。
 
 ## 目录与依赖
 
-`src/tax_manager/auth` 负责登录和密码，`customers` 负责客户及月度状态，`tags` 负责标签分类，`images` 负责图片，`customer_files` 负责其他文件，`db` 负责连接，`templates` 与 `static` 提供网页界面。SQL 使用参数化查询，动态表名只从固定白名单选择。
+`src/tax_manager/auth` 负责登录和密码，`customers` 负责客户及月度状态，`tags` 负责标签分类，`customer_files` 负责其他文件，`db` 负责连接，`templates` 与 `static` 提供网页界面。SQL 使用参数化查询，动态表名只从固定白名单选择。
 
-FastAPI（MIT）处理路由和 API，Starlette（BSD-3-Clause）处理会话与模板响应，Uvicorn（BSD-3-Clause）运行 ASGI 服务。Psycopg 3 及其 binary 包（LGPL-3.0-only）连接 PostgreSQL；Pillow（MIT-CMU）校验上传图片的实际格式。依赖版本锁在 `uv.lock`。应用本身不使用 LLM。
+FastAPI（MIT）处理路由和 API，Starlette（BSD-3-Clause）处理会话与模板响应，Uvicorn（BSD-3-Clause）运行 ASGI 服务。Psycopg 3 及其 binary 包（LGPL-3.0-only）连接 PostgreSQL。依赖版本锁在 `uv.lock`。应用本身不使用 LLM。

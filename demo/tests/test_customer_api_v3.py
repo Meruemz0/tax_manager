@@ -5,6 +5,10 @@ from tax_manager.app import create_app
 
 def test_customer_create_api_accepts_all_optional_fields_and_separate_monthly_states(tmp_path, monkeypatch):
     app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    fixed = datetime(2026, 9, 30, 13, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
+    monkeypatch.setattr("tax_manager.customers.api.china_now", lambda: fixed)
     statements = []
 
     class Result:
@@ -48,6 +52,7 @@ def test_customer_create_api_accepts_all_optional_fields_and_separate_monthly_st
     assert response.get_json()["id"] == 17
     customer_insert = next((sql, params) for sql, params in statements if "INSERT INTO customers" in sql)
     assert False in customer_insert[1] and all(i in customer_insert[1] for i in (3, 4, 5))
+    assert fixed in customer_insert[1]
     assert any("INSERT INTO monthly_bookkeeping" in sql and params == (17, date(2024, 1, 1), True) for sql, params in statements)
     assert any("INSERT INTO monthly_filings" in sql and params == (17, date(2024, 2, 1), True) for sql, params in statements)
 
@@ -80,10 +85,9 @@ def test_customer_create_api_requires_only_name(tmp_path, monkeypatch):
 
 
 
-def test_customer_create_api_accepts_images_and_other_files_in_one_multipart_request(tmp_path, monkeypatch):
+def test_customer_create_api_accepts_other_files_in_one_multipart_request(tmp_path, monkeypatch):
     from io import BytesIO
     import json
-    from PIL import Image
 
     app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
     inserts = []
@@ -107,14 +111,11 @@ def test_customer_create_api_accepts_images_and_other_files_in_one_multipart_req
                 return Result({"id": 1, "username": "wfg1"})
             if "INSERT INTO customers" in sql:
                 return Result({"id": 23})
-            if "INSERT INTO customer_images" in sql or "INSERT INTO customer_files" in sql:
+            if "INSERT INTO customer_files" in sql:
                 inserts.append(sql)
             return Result()
 
     monkeypatch.setattr("psycopg.connect", lambda *args, **kwargs: Connection())
-    image_bytes = BytesIO()
-    Image.new("RGB", (2, 2), "red").save(image_bytes, format="PNG")
-    image_bytes.seek(0)
     client = app.test_client()
     with client.session_transaction() as state:
         state["user_id"] = 1
@@ -123,17 +124,23 @@ def test_customer_create_api_accepts_images_and_other_files_in_one_multipart_req
         "/api/customers",
         data={
             "payload": json.dumps({"name": "含附件客户"}),
-            "images": (image_bytes, "capture.png"),
             "other_files": (BytesIO(b"arbitrary bytes"), "contract.exe"),
         },
         headers={"X-CSRF-Token": "token"},
         content_type="multipart/form-data",
     )
     assert response.status_code == 201
-    assert any("INSERT INTO customer_images" in sql for sql in inserts)
     assert any("INSERT INTO customer_files" in sql for sql in inserts)
-    assert len(list((tmp_path / "customer").rglob("capture.png"))) == 0
     assert len([p for p in (tmp_path / "other").rglob("*") if p.is_file()]) == 1
+    rejected = client.post(
+        "/api/customers",
+        data={"payload": json.dumps({"name": "no-image"}),
+              "images": (BytesIO(b"old image"), "capture.png")},
+        headers={"X-CSRF-Token": "token"},
+        content_type="multipart/form-data",
+    )
+    assert rejected.status_code == 400
+    assert len(inserts) == 1
 
 
 

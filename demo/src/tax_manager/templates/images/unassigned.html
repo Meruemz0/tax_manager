@@ -1,8 +1,0 @@
-{% extends 'base.html' %}
-{% from 'images/_cards.html' import cards %}
-{% block title %}图片库 · 税务客户管理{% endblock %}
-{% block content %}
-<div class="page-heading"><div><div class="eyebrow">工作台 / 图片库</div><h1>无归属图片</h1><p>存放暂时不关联客户的截图。可直接浏览、改名、替换、下载或删除。</p></div><span class="count-pill">{{ images|length }} 张图片</span></div>
-<section class="panel"><div class="section-head"><div><h2>上传图片</h2><p>PNG、JPEG、WebP，单张最多 10 MB。</p></div></div><form method="post" enctype="multipart/form-data" action="{{ url_for('images.upload_unassigned') }}" class="upload-row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="file" name="image" accept="image/png,image/jpeg,image/webp" required aria-label="选择无归属图片"><button class="button primary" type="submit">上传到图片库</button></form></section>
-<section class="panel space-top"><div class="section-head"><h2>全部图片</h2></div>{{ cards(images, 'unassigned', csrf_token) }}</section>
-{% endblock %}

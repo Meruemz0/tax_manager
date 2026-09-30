@@ -1,12 +1,9 @@
-from io import BytesIO
 from datetime import date
 
 import pytest
 
 from tax_manager.auth.passwords import verify_password
 from tax_manager.customers.validation import CustomerInput, ValidationError, validate_filing_month
-from tax_manager.app import create_app
-from tax_manager.images.storage import InvalidImage, UploadedImage, file_path, read_image, save_image
 
 
 TEST_HASH = (
@@ -56,33 +53,3 @@ def test_customer_input_parses_editable_registration_date():
     assert data.registered_on == date(2024, 2, 29)
     with pytest.raises(ValidationError):
         CustomerInput.from_form({"name": "客户", "registered_on": "2024-02-30"})
-
-
-def test_image_validator_checks_content_not_filename():
-    with pytest.raises(InvalidImage):
-        read_image(BytesIO(b"not a real png"), "screenshot.png")
-
-
-def test_image_validator_accepts_small_png():
-    from PIL import Image
-
-    stream = BytesIO()
-    Image.new("RGB", (2, 2), "white").save(stream, format="PNG")
-    stream.seek(0)
-    upload = read_image(stream, "capture.png")
-    assert upload.mime_type == "image/png"
-    assert upload.size_bytes == len(upload.data)
-    assert upload.original_name == "capture.png"
-
-
-def test_file_key_collision_does_not_delete_existing_image(tmp_path, monkeypatch):
-    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
-    key = "a" * 32
-    monkeypatch.setattr("tax_manager.images.storage.secrets.token_hex", lambda length: key)
-    with app.app_context():
-        path = file_path("customer", key)
-        path.parent.mkdir(parents=True)
-        path.write_bytes(b"existing image")
-        with pytest.raises(FileExistsError):
-            save_image("customer", UploadedImage(b"new image", "new.png", "image/png", 9))
-        assert path.read_bytes() == b"existing image"

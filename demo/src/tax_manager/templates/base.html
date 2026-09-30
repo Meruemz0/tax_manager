@@ -14,7 +14,6 @@
       {% if session.get('user_id') %}
       <nav aria-label="主导航">
         <a href="{{ url_for('customers.index') }}">首页</a>
-        <a href="{{ url_for('images.unassigned') }}">图片库</a>
         <a href="{{ url_for('tags.manage') }}">标签分类</a>
       </nav>
       {% endif %}

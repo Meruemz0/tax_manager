@@ -7,6 +7,7 @@ from psycopg.errors import UniqueViolation
 from tax_manager.auth import login_required
 from tax_manager.customers.validation import CHINA_TZ, CustomerInput, ValidationError, china_now, china_today, validate_filing_month
 from tax_manager.customers.search import build_home_query, parse_home_filters
+from tax_manager.customers.availability import deactivated_at_for_change
 from tax_manager.db import connect
 from tax_manager.images.storage import remove_image
 from tax_manager.customer_files.storage import remove_other_file
@@ -114,13 +115,14 @@ def create():
                 row = conn.execute(
                     """INSERT INTO customers
                        (name, tax_identifier, contact_name, contact_phone, note,
-                        registered_on, registered_at, is_available,
+                        registered_on, registered_at, is_available, deactivated_at,
                         taxpayer_identity_id, service_type_id, customer_source_id)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        RETURNING id""",
                     (data.name, data.tax_identifier, data.contact_name, data.contact_phone,
                      data.note, registered_on, registered_at,
                      True if data.is_available is None else data.is_available,
+                     china_now() if data.is_available is False else None,
                      data.taxpayer_identity_id, data.service_type_id, data.customer_source_id),
                 ).fetchone()
                 ensure_monthly_filings(conn, row["id"])
@@ -167,10 +169,6 @@ def detail(customer_id: int):
             "SELECT book_month, is_booked FROM monthly_bookkeeping WHERE customer_id = %s ORDER BY book_month DESC",
             (customer_id,),
         ).fetchall()
-        images = conn.execute(
-            "SELECT id, original_name, mime_type, size_bytes FROM customer_images WHERE customer_id = %s ORDER BY id DESC",
-            (customer_id,),
-        ).fetchall()
         files = conn.execute(
             "SELECT id, original_name, size_bytes FROM customer_files WHERE customer_id = %s ORDER BY id DESC",
             (customer_id,),
@@ -203,7 +201,7 @@ def detail(customer_id: int):
     return render_template(
         "customers/detail.html", customer=customer, history=history, current_record=current,
         registered_at_china=registered_at_china,
-        images=images, files=files, assigned_categories=assigned_categories,
+        files=files, assigned_categories=assigned_categories,
         available_categories=available_categories,
     )
 
@@ -216,7 +214,7 @@ def edit(customer_id: int):
             data = CustomerInput.from_form(request.form)
             with connect() as conn:
                 existing = conn.execute(
-                    "SELECT registered_on, registered_at, is_available FROM customers WHERE id = %s FOR UPDATE",
+                    "SELECT registered_on, registered_at, is_available, deactivated_at FROM customers WHERE id = %s FOR UPDATE",
                     (customer_id,),
                 ).fetchone()
                 if not existing:
@@ -248,16 +246,21 @@ def edit(customer_id: int):
                         "DELETE FROM monthly_bookkeeping WHERE customer_id = %s AND book_month < %s",
                         (customer_id, registered_on.replace(day=1)),
                     )
+                new_available = existing.get("is_available", True) if data.is_available is None else data.is_available
+                deactivated_at = deactivated_at_for_change(
+                    existing.get("is_available", True), new_available,
+                    existing.get("deactivated_at"), china_now(),
+                )
                 row = conn.execute(
                     """UPDATE customers SET name = %s, tax_identifier = %s,
                        contact_name = %s, contact_phone = %s, note = %s,
                        registered_on = %s, registered_at = %s, is_available = %s,
-                       taxpayer_identity_id = %s, service_type_id = %s, customer_source_id = %s,
+                       deactivated_at = %s, taxpayer_identity_id = %s, service_type_id = %s, customer_source_id = %s,
                        updated_at = now()
                        WHERE id = %s RETURNING id""",
                     (data.name, data.tax_identifier, data.contact_name, data.contact_phone,
                      data.note, registered_on, registered_at,
-                     existing.get("is_available", True) if data.is_available is None else data.is_available,
+                     new_available, deactivated_at,
                      data.taxpayer_identity_id, data.service_type_id, data.customer_source_id,
                      customer_id),
                 ).fetchone()
