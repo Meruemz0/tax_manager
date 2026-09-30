@@ -38,3 +38,14 @@ def test_request_size_limit_applies_to_streamed_bodies(tmp_path):
         headers={"content-type": "application/x-www-form-urlencoded"},
     )
     assert response.status_code == 413
+
+
+def test_public_page_uses_versioned_static_assets(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE_URL": "postgresql://unused", "STORAGE_DIR": tmp_path})
+    client = TestClient(app)
+    html = client.get("/").text
+    assert '/static/app.js?v=' in html
+    assert '/static/style.css?v=' in html
+    import re
+    script_url = re.search(r'src="(/static/app\.js\?v=[^"]+)"', html).group(1)
+    assert 'data-home-filter-toggle' in client.get(script_url).text

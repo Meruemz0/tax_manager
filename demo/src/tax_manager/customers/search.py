@@ -50,12 +50,11 @@ class HomeFilters:
     taxpayer_identity_id: int | None
     service_type_id: int | None
     customer_source_id: int | None
-    filing_month: date | None
     filing_status: bool | None
-    bookkeeping_month: date | None
     bookkeeping_status: bool | None
     registered_from: date | None
     registered_to: date | None
+    is_available: bool | None
 
     @property
     def has_criteria(self) -> bool:
@@ -68,26 +67,27 @@ class HomeFilters:
             or self.bookkeeping_status is not None
             or self.registered_from is not None
             or self.registered_to is not None
+            or self.is_available is not None
         )
 
 
 def parse_home_filters(args: Mapping[str, str], today: date) -> HomeFilters:
     selected = month_start(args["month"], current=today) if args.get("month") else today.replace(day=1)
 
-    def status(prefix: str) -> tuple[date | None, bool | None]:
+    def status(prefix: str) -> bool | None:
         raw = args.get(f"{prefix}_status")
-        selected_month = (
-            month_start(args[f"{prefix}_month"], current=today)
-            if args.get(f"{prefix}_month") else None
-        )
         if raw in (None, ""):
-            return selected_month, None
-        if raw not in {"0", "1"} or selected_month is None:
-            raise ValidationError("请为月度状态选择月份和已完成/未完成")
-        return selected_month, raw == "1"
+            return None
+        if raw not in {"0", "1"}:
+            raise ValidationError("月度状态无效")
+        return raw == "1"
 
-    filing_month, filing_status = status("filing")
-    bookkeeping_month, bookkeeping_status = status("bookkeeping")
+    filing_status = status("filing")
+    bookkeeping_status = status("bookkeeping")
+    raw_available = args.get("is_available")
+    if raw_available not in (None, "", "0", "1"):
+        raise ValidationError("可用状态无效")
+    is_available = None if raw_available in (None, "") else raw_available == "1"
     registered_from = optional_day(args.get("registered_from"))
     registered_to = optional_day(args.get("registered_to"))
     if registered_from and registered_to and registered_from > registered_to:
@@ -97,8 +97,8 @@ def parse_home_filters(args: Mapping[str, str], today: date) -> HomeFilters:
         optional_id(args.get("taxpayer_identity_id")),
         optional_id(args.get("service_type_id")),
         optional_id(args.get("customer_source_id")),
-        filing_month, filing_status, bookkeeping_month, bookkeeping_status,
-        registered_from, registered_to,
+        filing_status, bookkeeping_status,
+        registered_from, registered_to, is_available,
     )
 
 
@@ -120,6 +120,9 @@ def build_home_query(filters: HomeFilters) -> tuple[str, tuple]:
             "(c.registered_at AT TIME ZONE 'Asia/Shanghai')::date < %s",
         ))
         condition_params.append(next_month(filters.month))
+    if filters.is_available is not None:
+        conditions.append("c.is_available = %s")
+        condition_params.append(filters.is_available)
     if filters.query:
         conditions.append("(c.name ILIKE %s OR COALESCE(c.tax_identifier, '') ILIKE %s)")
         condition_params.extend((f"%{filters.query}%", f"%{filters.query}%"))
@@ -131,9 +134,9 @@ def build_home_query(filters: HomeFilters) -> tuple[str, tuple]:
         if selected_id is not None:
             conditions.append(f"c.{column} = %s")
             condition_params.append(selected_id)
-    for alias, table, month, value in (
-        ("mf_filter", "monthly_filings", filters.filing_month, filters.filing_status),
-        ("mb_filter", "monthly_bookkeeping", filters.bookkeeping_month, filters.bookkeeping_status),
+    for alias, table, value in (
+        ("mf_filter", "monthly_filings", filters.filing_status),
+        ("mb_filter", "monthly_bookkeeping", filters.bookkeeping_status),
     ):
         if value is not None:
             month_column = "tax_month" if table == "monthly_filings" else "book_month"
@@ -142,7 +145,7 @@ def build_home_query(filters: HomeFilters) -> tuple[str, tuple]:
                 f"JOIN {table} AS {alias} ON {alias}.customer_id = c.id "
                 f"AND {alias}.{month_column} = %s"
             )
-            params.append(month)
+            params.append(filters.month)
             conditions.append(f"{alias}.{status_column} = %s")
             condition_params.append(value)
     if filters.registered_from:

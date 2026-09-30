@@ -2,9 +2,11 @@
 
 from contextlib import contextmanager
 from contextvars import ContextVar
+import hashlib
 import hmac
 import re
 import secrets
+from pathlib import Path
 from urllib.parse import urlencode
 
 import click
@@ -149,6 +151,12 @@ def url_for(endpoint: str, **values):
     return path + ("?" + urlencode(query) if query else "")
 
 
+def static_url(filename: str) -> str:
+    asset = Path(__file__).parent / "static" / filename
+    version = hashlib.sha256(asset.read_bytes()).hexdigest()[:12]
+    return f"{url_for('static', filename=filename)}?v={version}"
+
+
 def redirect(location: str):
     return RedirectResponse(location, status_code=302)
 
@@ -166,6 +174,7 @@ def render_template(name: str, **context):
             "csrf_token": token,
             "session": session,
             "url_for": url_for,
+            "static_url": static_url,
             "get_flashed_messages": get_flashed_messages,
             **context,
         },

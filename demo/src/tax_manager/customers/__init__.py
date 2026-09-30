@@ -1,7 +1,7 @@
 """Customer records, monthly statuses, and the private customer home page."""
 
 from datetime import datetime
-from tax_manager.web import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from tax_manager.web import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from psycopg.errors import UniqueViolation
 
 from tax_manager.auth import login_required
@@ -54,6 +54,8 @@ def index():
     try:
         filters = parse_home_filters(request.args, china_today())
     except ValidationError as exc:
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"error": str(exc)}), 400
         flash(str(exc), "error")
         return redirect(url_for("customers.index"))
     with connect() as conn:
