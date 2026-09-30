@@ -9,7 +9,7 @@ import secrets
 from tax_manager.web import current_app
 
 
-MAX_OTHER_FILE_BYTES = 1024 * 1024
+MAX_OTHER_FILE_BYTES = 20 * 1024 * 1024
 KEY_RE = re.compile(r"[0-9a-f]{32}\Z")
 
 
@@ -39,7 +39,7 @@ def read_other_file(stream, filename: str) -> UploadedOtherFile:
         raise InvalidOtherFile("文件名称无效或超过 255 字")
     data = stream.read(MAX_OTHER_FILE_BYTES + 1)
     if not data or len(data) > MAX_OTHER_FILE_BYTES:
-        raise InvalidOtherFile("其他文件必须大于 0 且不超过 1 MB")
+        raise InvalidOtherFile("其他文件必须大于 0 且不超过 20 MB")
     return UploadedOtherFile(data, name, len(data))
 
 

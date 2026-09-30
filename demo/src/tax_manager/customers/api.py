@@ -88,8 +88,6 @@ def create_customer():
             read_other_file(file.stream, file.filename)
             for file in request.files.getlist("other_files") if file.filename
         ]
-        if len(other_uploads) > 10:
-            raise ValidationError("每个客户最多保存 10 个其他文件")
         with connect() as conn:
             validate_customer_choices(conn, data)
             for category_id in general_ids:

@@ -200,7 +200,7 @@ def detail(customer_id: int):
     registered_at_china = registered_at.astimezone(CHINA_TZ).strftime("%Y-%m-%d %H:%M") if registered_at else str(customer["registered_on"])
     return render_template(
         "customers/detail.html", customer=customer, history=history, current_record=current,
-        registered_at_china=registered_at_china,
+        registered_at_china=registered_at_china, files_open=request.args.get("files") == "open",
         files=files, assigned_categories=assigned_categories,
         available_categories=available_categories,
     )

@@ -68,22 +68,25 @@
   </form>
   {% endif %}
 </section>
-<section class="panel space-top">
-  <div class="section-head"><div><h2>其他文件</h2><p>任意格式，单个最多 1 MB，每个客户最多 10 个；下载时作为附件保存。</p></div><span class="count-pill">{{ files|length if files is defined else 0 }}/10</span></div>
-  <form method="post" enctype="multipart/form-data" action="{{ url_for('customer_files.upload', customer_id=customer.id) }}" class="upload-row">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input type="file" name="file" required aria-label="选择其他文件">
-    <button class="button primary" type="submit">上传文件</button>
-  </form>
-  {% if files %}
-  <div class="table-wrap"><table class="files-table"><thead><tr><th>文件名</th><th>大小</th><th>操作</th></tr></thead><tbody>
-    {% for file in files %}
-    <tr><td><form method="post" action="{{ url_for('customer_files.rename', customer_id=customer.id, file_id=file.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input name="original_name" value="{{ file.original_name }}" maxlength="255" aria-label="修改文件名"><button class="button small" type="submit">改名</button></form></td>
-      <td>{{ file.size_bytes }} 字节</td>
-      <td class="inline-form"><a class="button small" href="{{ url_for('customer_files.download', customer_id=customer.id, file_id=file.id) }}">下载</a><form method="post" action="{{ url_for('customer_files.delete', customer_id=customer.id, file_id=file.id) }}" data-confirm="确定删除此文件吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button small danger-text" type="submit">删除</button></form></td></tr>
-    {% endfor %}
-  </tbody></table></div>
-  {% else %}<p>暂无其他文件。</p>{% endif %}
-</section>
+<details class="file-disclosure space-top" id="customer-files" {% if files_open|default(false) %}open{% endif %}>
+  <summary><span>其他文件</span><span class="count-pill">{{ files|length if files is defined else 0 }} 个</span></summary>
+  <div class="panel file-panel">
+    <p>任意格式，单个最多 20 MB，数量不限；下载时作为附件保存。</p>
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('customer_files.upload', customer_id=customer.id) }}" class="upload-row">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="file" name="file" multiple required aria-label="选择文件，可多选">
+      <button class="button primary" type="submit">上传文件</button>
+    </form>
+    {% if files %}
+    <div class="table-wrap"><table class="files-table"><thead><tr><th>文件名</th><th>大小</th><th>操作</th></tr></thead><tbody>
+      {% for file in files %}
+      <tr><td><form method="post" action="{{ url_for('customer_files.rename', customer_id=customer.id, file_id=file.id) }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input name="original_name" value="{{ file.original_name }}" maxlength="255" aria-label="修改文件名"><button class="button small" type="submit">改名</button></form></td>
+        <td>{{ file.size_bytes }} 字节</td>
+        <td class="inline-form"><a class="button small" href="{{ url_for('customer_files.download', customer_id=customer.id, file_id=file.id) }}">下载</a><form method="post" action="{{ url_for('customer_files.delete', customer_id=customer.id, file_id=file.id) }}" data-confirm="确定删除此文件吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button small danger-text" type="submit">删除</button></form></td></tr>
+      {% endfor %}
+    </tbody></table></div>
+    {% else %}<p>暂无其他文件。</p>{% endif %}
+  </div>
+</details>
 <section class="danger-zone"><div><h2>删除客户</h2><p>同时删除该客户的记账、报税记录和其他文件，此操作不能撤销。</p></div><form method="post" action="{{ url_for('customers.delete', customer_id=customer.id) }}" data-confirm="确定删除客户及其全部月度记录和文件吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger" type="submit">删除客户</button></form></section>
 {% endblock %}

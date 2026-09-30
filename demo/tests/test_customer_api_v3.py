@@ -122,16 +122,14 @@ def test_customer_create_api_accepts_other_files_in_one_multipart_request(tmp_pa
         state["csrf_token"] = "token"
     response = client.post(
         "/api/customers",
-        data={
-            "payload": json.dumps({"name": "含附件客户"}),
-            "other_files": (BytesIO(b"arbitrary bytes"), "contract.exe"),
-        },
+        data={"payload": json.dumps({"name": "含附件客户"})},
+        files=[("other_files", (f"contract{i}.exe", b"x", "application/octet-stream"))
+               for i in range(11)],
         headers={"X-CSRF-Token": "token"},
-        content_type="multipart/form-data",
     )
     assert response.status_code == 201
-    assert any("INSERT INTO customer_files" in sql for sql in inserts)
-    assert len([p for p in (tmp_path / "other").rglob("*") if p.is_file()]) == 1
+    assert len(inserts) == 11
+    assert len([p for p in (tmp_path / "other").rglob("*") if p.is_file()]) == 11
     rejected = client.post(
         "/api/customers",
         data={"payload": json.dumps({"name": "no-image"}),
@@ -140,7 +138,7 @@ def test_customer_create_api_accepts_other_files_in_one_multipart_request(tmp_pa
         content_type="multipart/form-data",
     )
     assert rejected.status_code == 400
-    assert len(inserts) == 1
+    assert len(inserts) == 11
 
 
 

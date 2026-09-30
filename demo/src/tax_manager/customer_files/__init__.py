@@ -1,4 +1,4 @@
-"""Authenticated UI for customer attachments that are not images."""
+"""Authenticated UI for arbitrary customer attachments."""
 
 from tax_manager.web import Blueprint, abort, current_app, flash, redirect, request, send_file, url_for
 
@@ -14,23 +14,23 @@ blueprint = Blueprint("customer_files", __name__)
 
 
 def detail_redirect(customer_id: int):
-    return redirect(url_for("customers.detail", customer_id=customer_id))
+    return redirect(url_for("customers.detail", customer_id=customer_id) + "?files=open#customer-files")
 
 
 @blueprint.post("/customers/<int:customer_id>/files")
 @login_required
 def upload(customer_id: int):
-    incoming = request.files.get("file")
+    incoming = [file for file in request.files.getlist("file") if file.filename]
     if not incoming:
-        flash("请选择其他文件", "error")
+        flash("请选择文件", "error")
         return detail_redirect(customer_id)
     try:
-        upload_data = read_other_file(incoming.stream, incoming.filename)
+        uploads = [read_other_file(file.stream, file.filename) for file in incoming]
     except InvalidOtherFile as exc:
         flash(str(exc), "error")
         return detail_redirect(customer_id)
 
-    key = None
+    created_keys = []
     try:
         with connect() as conn:
             customer = conn.execute(
@@ -38,26 +38,22 @@ def upload(customer_id: int):
             ).fetchone()
             if not customer:
                 abort(404)
-            count = conn.execute(
-                "SELECT count(*) AS count FROM customer_files WHERE customer_id = %s", (customer_id,)
-            ).fetchone()["count"]
-            if count >= 10:
-                flash("每个客户最多保存 10 个其他文件", "error")
-                return detail_redirect(customer_id)
-            key = save_other_file(upload_data)
-            conn.execute(
-                """INSERT INTO customer_files (customer_id, storage_key, original_name, size_bytes)
-                   VALUES (%s, %s, %s, %s)""",
-                (customer_id, key, upload_data.original_name, upload_data.size_bytes),
-            )
+            for upload_data in uploads:
+                key = save_other_file(upload_data)
+                created_keys.append(key)
+                conn.execute(
+                    """INSERT INTO customer_files (customer_id, storage_key, original_name, size_bytes)
+                       VALUES (%s, %s, %s, %s)""",
+                    (customer_id, key, upload_data.original_name, upload_data.size_bytes),
+                )
     except Exception:
-        if key:
+        for key in created_keys:
             try:
                 remove_other_file(key)
             except OSError:
                 current_app.logger.exception("Failed to clean up other file after database error")
         raise
-    flash("其他文件已上传", "success")
+    flash(f"已上传 {len(uploads)} 个文件", "success")
     return detail_redirect(customer_id)
 
 
