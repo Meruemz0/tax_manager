@@ -16,6 +16,7 @@
       <div><dt>服务类型</dt><dd>{{ customer.service_type or '—' }}</dd></div>
       <div><dt>客户来源</dt><dd>{{ customer.customer_source or '—' }}</dd></div>
       <div><dt>备注</dt><dd class="pre-wrap">{{ customer.note or '—' }}</dd></div>
+      <div><dt>建账月份</dt><dd>{{ customer.bookkeeping_start_month.strftime('%Y-%m') if customer.get('bookkeeping_start_month') else '—' }}</dd></div>
       <div><dt>联系人</dt><dd>{{ customer.contact_name or '—' }}</dd></div>
       <div><dt>联系电话</dt><dd>{{ customer.contact_phone or '—' }}</dd></div>
     </dl>
@@ -46,6 +47,7 @@
     </tbody></table></div>
   </section>
 </div>
+{% include 'customers/business.html' %}
 <section class="panel space-top">
   <div class="section-head"><div><h2>其他标签</h2><p>保留之前关联的自定义标签。</p></div><a class="button small" href="{{ url_for('tags.manage') }}">管理标签选项</a></div>
   {% if assigned_categories %}
@@ -72,7 +74,7 @@
   <summary><span>其他文件</span><span class="count-pill">{{ files|length if files is defined else 0 }} 个</span></summary>
   <div class="panel file-panel">
     <p>任意格式，单个最多 20 MB，数量不限；下载时作为附件保存。</p>
-    <form method="post" enctype="multipart/form-data" action="{{ url_for('customer_files.upload', customer_id=customer.id) }}" class="upload-row">
+    <form method="post" enctype="multipart/form-data" data-secure-upload action="{{ url_for('customer_files.upload', customer_id=customer.id) }}" class="upload-row">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="file" name="file" multiple required aria-label="选择文件，可多选">
       <button class="button primary" type="submit">上传文件</button>
@@ -88,5 +90,5 @@
     {% else %}<p>暂无其他文件。</p>{% endif %}
   </div>
 </details>
-<section class="danger-zone"><div><h2>删除客户</h2><p>同时删除该客户的记账、报税记录和其他文件，此操作不能撤销。</p></div><form method="post" action="{{ url_for('customers.delete', customer_id=customer.id) }}" data-confirm="确定删除客户及其全部月度记录和文件吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger" type="submit">删除客户</button></form></section>
+<section class="danger-zone"><div><h2>删除客户</h2><p>同时删除该客户的记账、报税记录、系统账号、服务订单及其文件，此操作不能撤销。</p></div><form method="post" action="{{ url_for('customers.delete', customer_id=customer.id) }}" data-confirm="确定删除客户及其全部月度记录和文件吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger" type="submit">删除客户</button></form></section>
 {% endblock %}

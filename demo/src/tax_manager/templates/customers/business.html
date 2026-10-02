@@ -1,0 +1,82 @@
+<section class="panel space-top" id="system-accounts">
+  <div class="section-head"><div><h2>系统账号</h2><p>每个客户最多 10 条。账号和密码加密保存，点击时才临时解密。</p></div><span class="count-pill">{{ accounts|length if accounts is defined else 0 }}/10</span></div>
+  {% if accounts is defined and accounts %}
+  <div class="table-wrap"><table class="files-table"><thead><tr><th>系统</th><th>登录地址</th><th>操作</th></tr></thead><tbody>
+    {% for account in accounts %}
+    <tr><td><strong>{{ account.system_name }}</strong>{% if account.note %}<div class="muted">{{ account.note }}</div>{% endif %}</td>
+      <td>{% if account.login_url %}<a href="{{ account.login_url }}" target="_blank" rel="noopener noreferrer">打开登录页</a>{% else %}—{% endif %}</td>
+      <td>
+        <div class="inline-form">
+          <button type="button" class="button small" data-account-copy data-url="{{ url_for('customer_accounts.copy', customer_id=customer.id, account_id=account.id) }}" data-field="account" data-csrf="{{ csrf_token }}">复制账号</button>
+          <button type="button" class="button small" data-account-copy data-url="{{ url_for('customer_accounts.copy', customer_id=customer.id, account_id=account.id) }}" data-field="password" data-csrf="{{ csrf_token }}">复制密码</button>
+          <button type="button" class="button small" data-account-reveal data-field="account" data-url="{{ url_for('customer_accounts.copy', customer_id=customer.id, account_id=account.id) }}" data-csrf="{{ csrf_token }}">显示账号</button>
+          <button type="button" class="button small" data-account-reveal data-field="password" data-url="{{ url_for('customer_accounts.copy', customer_id=customer.id, account_id=account.id) }}" data-csrf="{{ csrf_token }}">显示密码</button>
+        </div>
+        <span class="account-action-message" role="status"></span><span class="account-secret" hidden></span>
+        <details class="space-top"><summary>修改这条账号</summary>
+          <form method="post" action="{{ url_for('customer_accounts.edit', customer_id=customer.id, account_id=account.id) }}" class="stacked-form space-top">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>系统名称<input name="system_name" value="{{ account.system_name }}" maxlength="100" required></label>
+            <label>登录网址<input name="login_url" value="{{ account.login_url or '' }}" maxlength="500" type="url"></label>
+            <label>新账号<input name="account_name" autocomplete="off" maxlength="255" placeholder="留空保留原账号"></label>
+            <label>新密码<input name="password" type="password" autocomplete="new-password" maxlength="1024" placeholder="留空保留原密码"></label>
+            <label>备注<input name="note" value="{{ account.note or '' }}" maxlength="255"></label>
+            <button class="button small" type="submit">保存账号修改</button>
+          </form>
+          <form method="post" action="{{ url_for('customer_accounts.delete', customer_id=customer.id, account_id=account.id) }}" data-confirm="确定删除这条系统账号吗？" class="space-top">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button small danger-text" type="submit">删除这条账号</button>
+          </form>
+        </details>
+      </td></tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<p>暂无系统账号。</p>{% endif %}
+  {% if accounts is not defined or accounts|length < 10 %}
+  <details class="space-top"><summary>添加系统账号</summary>
+    <form method="post" action="{{ url_for('customer_accounts.create', customer_id=customer.id) }}" class="stacked-form space-top">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-grid">
+        <label>系统名称 <em>*</em><input name="system_name" maxlength="100" required></label>
+        <label>登录网址<input name="login_url" type="url" maxlength="500" placeholder="https://"></label>
+        <label>账号<input name="account_name" autocomplete="off" maxlength="255"></label>
+        <label>密码<input name="password" type="password" autocomplete="new-password" maxlength="1024"></label>
+      </div>
+      <label>备注<input name="note" maxlength="255"></label>
+      <button class="button primary" type="submit">保存系统账号</button>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+<section class="panel space-top" id="service-orders">
+  <div class="section-head"><div><h2>服务订单</h2><p>订单、收款和完成进度分别记录；每笔订单可附多份原始凭证。</p></div><span class="count-pill">{{ orders|length if orders is defined else 0 }} 笔</span></div>
+  {% if orders is defined and orders %}
+  <div class="table-wrap"><table class="files-table"><thead><tr><th>订单／服务</th><th>金额与收款</th><th>交付</th><th>服务期限／应收</th><th>操作</th></tr></thead><tbody>
+    {% for order in orders %}
+    <tr><td><strong>#{{ order.id }} {{ order.service_name }}</strong><div class="muted">订单日期：{{ order.order_date }}</div>{% if order.contract_number %}<div class="muted">合同编号：{{ order.contract_number }}</div>{% endif %}{% if order.note %}<div class="pre-wrap">{{ order.note }}</div>{% endif %}</td>
+      <td>{{ order.amount }} 元<div class="muted">已收 {{ order.paid_total }} 元</div><span class="badge {{ 'done' if order.payment_status == '已收款' else 'pending' }}">{{ order.payment_status }}</span></td>
+      <td><span class="badge {{ 'done' if order.is_completed else 'pending' }}">{{ '已完成' if order.is_completed else '未完成' }}</span></td>
+      <td>{% if order.service_start_month %}{{ order.service_start_month.strftime('%Y-%m') }}{% else %}—{% endif %} 至 {% if order.service_end_month %}{{ order.service_end_month.strftime('%Y-%m') }}{% else %}—{% endif %}<div class="muted">应收日期：{{ order.due_date or '—' }}</div></td>
+      <td><a class="button small" href="{{ url_for('orders.detail', customer_id=customer.id, order_id=order.id) }}">查看／修改 · {{ order.document_count }} 个文件</a></td></tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<p>暂无服务订单。</p>{% endif %}
+  <details class="space-top"><summary>添加服务订单</summary>
+    <form method="post" action="{{ url_for('orders.create', customer_id=customer.id) }}" class="stacked-form space-top">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-grid">
+        <label>服务项目 <em>*</em><input name="service_name" maxlength="150" required placeholder="例如：代理记账"></label>
+        <label>订单日期<input name="order_date" type="date"></label>
+        <label>订单金额（元）<input name="amount" type="number" min="0" max="9999999999.99" step="0.01" value="0"></label>
+        <label>服务起始月份<input name="service_start_month" type="month"></label>
+        <label>服务结束月份<input name="service_end_month" type="month"></label>
+        <label>应收日期<input name="due_date" type="date"></label>
+        <label>合同编号<input name="contract_number" maxlength="100"></label>
+        <label>完成状态<select name="is_completed"><option value="0">未完成</option><option value="1">已完成</option></select></label>
+      </div>
+      <label>订单备注<textarea name="note" maxlength="1000" rows="3"></textarea></label>
+      <button class="button primary" type="submit">添加订单</button>
+    </form>
+  </details>
+</section>
+

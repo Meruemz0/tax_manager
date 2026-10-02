@@ -10,6 +10,8 @@
       <label>税号<input name="tax_identifier" value="{{ customer.get('tax_identifier') or '' }}" maxlength="64"></label>
       <label>联系人<input name="contact_name" value="{{ customer.get('contact_name') or '' }}" maxlength="100"></label>
       <label>联系电话<input name="contact_phone" value="{{ customer.get('contact_phone') or '' }}" maxlength="50" inputmode="tel"></label>
+      {% set bookkeeping_value = customer.get('bookkeeping_start_month') %}
+      <label>建账月份<input name="bookkeeping_start_month" type="month" value="{{ bookkeeping_value.strftime('%Y-%m') if bookkeeping_value and bookkeeping_value.strftime is defined else (bookkeeping_value or '') }}"><small>可留空，区别于在本公司注册时间。</small></label>
       <label>在本公司注册时间<input name="registered_at" type="datetime-local" value="{{ registered_at_value if registered_at_value is defined else '' }}"><small>留空则新增时使用当前中国时间。</small></label>
       {% set available_value = customer.get('is_available', '1') %}
       <label>可用状态<select name="is_available"><option value="1" {% if available_value == true or available_value == '1' %}selected{% endif %}>可用</option><option value="0" {% if available_value == false or available_value == '0' %}selected{% endif %}>不可用</option></select></label>

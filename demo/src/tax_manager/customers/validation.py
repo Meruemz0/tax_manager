@@ -60,6 +60,7 @@ class CustomerInput:
     taxpayer_identity_id: int | None = None
     service_type_id: int | None = None
     customer_source_id: int | None = None
+    bookkeeping_start_month: date | None = None
 
     @classmethod
     def from_form(cls, form: Mapping[str, Any]) -> "CustomerInput":
@@ -120,6 +121,16 @@ class CustomerInput:
         else:
             raise ValidationError("可用状态无效")
 
+        raw_bookkeeping_start = form.get("bookkeeping_start_month")
+        bookkeeping_start_month = None
+        if raw_bookkeeping_start not in (None, ""):
+            if not isinstance(raw_bookkeeping_start, str) or not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", raw_bookkeeping_start):
+                raise ValidationError("建账月份格式应为 YYYY-MM")
+            try:
+                bookkeeping_start_month = date.fromisoformat(raw_bookkeeping_start + "-01")
+            except ValueError as exc:
+                raise ValidationError("建账月份无效") from exc
+
         return cls(
             fields["name"],
             *(fields[key] or None for key in ("tax_identifier", "contact_name", "contact_phone", "note")),
@@ -129,4 +140,5 @@ class CustomerInput:
             optional_choice_id(form.get("taxpayer_identity_id"), "纳税人身份"),
             optional_choice_id(form.get("service_type_id"), "服务类型"),
             optional_choice_id(form.get("customer_source_id"), "客户来源"),
+            bookkeeping_start_month,
         )

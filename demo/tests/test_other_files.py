@@ -54,6 +54,7 @@ def test_customer_can_upload_multiple_files_without_a_count_limit(tmp_path, monk
     response = client.post(
         "/customers/7/files",
         data={"csrf_token": "token"},
+        headers={"X-CSRF-Token": "token"},
         files=[("file", ("first.any", b"x" * (20 * 1024 * 1024), "application/octet-stream")),
                ("file", ("second.zzz", b"two", "application/octet-stream"))],
     )

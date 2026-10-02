@@ -59,6 +59,28 @@ def test_windows_launcher_uses_ssh_forwarding_for_database(tmp_path, monkeypatch
         observed["served"] = True
         assert (host, port, log_level) == ("0.0.0.0", 8000, "info")
 
+    class FakeResult:
+        def __init__(self, row=None):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class FakeDatabase:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def execute(self, sql, params=None):
+            if "SELECT challenge_ciphertext" in sql:
+                return FakeResult()
+            if "EXISTS(SELECT 1 FROM customer_system_accounts)" in sql:
+                return FakeResult({"has_encrypted_data": False})
+            return FakeResult()
+
+    monkeypatch.setattr("psycopg.connect", lambda *args, **kwargs: FakeDatabase())
     monkeypatch.setattr(start_windows.uvicorn, "run", fake_serve)
     monkeypatch.setattr(start_windows.webbrowser, "open", lambda url: True)
 

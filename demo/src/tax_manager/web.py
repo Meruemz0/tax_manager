@@ -262,24 +262,54 @@ class Blueprint:
             async def endpoint(raw: Request):
                 app = raw.app
                 content_type = raw.headers.get("content-type", "").split(";", 1)[0].lower()
-                form = await raw.form() if content_type in {
-                    "application/x-www-form-urlencoded", "multipart/form-data",
-                } else {}
-                json_data = None
-                if content_type == "application/json" or content_type.endswith("+json"):
-                    try:
-                        json_data = await raw.json()
-                    except ValueError:
-                        pass
-                adapter = RequestAdapter(raw, form, json_data)
-                with request_context(app, adapter):
-                    if raw.method in _FORM_METHODS:
+                multipart = content_type == "multipart/form-data"
+                if multipart:
+                    # Reject unauthorized uploads before Starlette buffers the body.
+                    with request_context(app, RequestAdapter(raw, {}, None)):
+                        if getattr(view, "requires_login", False):
+                            from tax_manager.db import connect
+                            user_id = session.get("user_id")
+                            if not user_id:
+                                return redirect(url_for("auth.login"))
+                            with connect() as conn:
+                                user = conn.execute(
+                                    "SELECT id FROM site_users WHERE id = %s AND is_active = TRUE",
+                                    (user_id,),
+                                ).fetchone()
+                            if not user:
+                                session.clear()
+                                return redirect(url_for("auth.login"))
                         expected = session.get("csrf_token")
-                        supplied = form.get("csrf_token") or raw.headers.get("X-CSRF-Token", "")
-                        if not expected or not isinstance(supplied, str) or not hmac.compare_digest(expected, supplied):
+                        supplied = raw.headers.get("X-CSRF-Token", "")
+                        if not expected or not hmac.compare_digest(expected, supplied):
                             return Response("表单已过期，请刷新页面后重试", status_code=400)
-                    result = await run_in_threadpool(view, **raw.path_params)
-                    return _response(result)
+
+                async def dispatch():
+                    form = await raw.form() if content_type in {
+                        "application/x-www-form-urlencoded", "multipart/form-data",
+                    } else {}
+                    json_data = None
+                    if content_type == "application/json" or content_type.endswith("+json"):
+                        try:
+                            json_data = await raw.json()
+                        except ValueError:
+                            pass
+                    adapter = RequestAdapter(raw, form, json_data)
+                    with request_context(app, adapter):
+                        if raw.method in _FORM_METHODS:
+                            expected = session.get("csrf_token")
+                            supplied = raw.headers.get("X-CSRF-Token", "") if multipart else (
+                                form.get("csrf_token") or raw.headers.get("X-CSRF-Token", "")
+                            )
+                            if not expected or not isinstance(supplied, str) or not hmac.compare_digest(expected, supplied):
+                                return Response("表单已过期，请刷新页面后重试", status_code=400)
+                        result = await run_in_threadpool(view, **raw.path_params)
+                        return _response(result)
+
+                if multipart:
+                    async with app.state.multipart_slots:
+                        return await dispatch()
+                return await dispatch()
 
             self.router.add_api_route(
                 converted, endpoint, methods=list(methods), name=endpoint_name,

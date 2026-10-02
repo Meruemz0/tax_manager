@@ -67,6 +67,7 @@ def login_required(view):
             return redirect(url_for("auth.login"))
         return view(*args, **kwargs)
 
+    wrapped.requires_login = True
     return wrapped
 
 

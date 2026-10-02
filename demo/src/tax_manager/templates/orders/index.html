@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}服务订单 · 税务客户管理{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><a href="{{ url_for('customers.index') }}">首页</a> / 服务订单</div><h1>服务订单</h1><p>跨客户查看订单、交付与收款情况。</p></div></div>
+<section class="panel">
+  <form method="get" action="{{ url_for('orders.index') }}" class="stacked-form">
+    <div class="form-grid">
+      <label>搜索客户／服务／合同编号<input name="q" value="{{ query }}" maxlength="100"></label>
+      <label>收款状态<select name="payment">
+        {% for value, label in [('all','全部'),('unpaid','未收款'),('partial','部分收款'),('paid','已收款'),('no_charge','无需收款')] %}
+        <option value="{{ value }}" {% if payment == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select></label>
+      <label>完成状态<select name="completion"><option value="all" {% if completion == 'all' %}selected{% endif %}>全部</option><option value="no" {% if completion == 'no' %}selected{% endif %}>未完成</option><option value="yes" {% if completion == 'yes' %}selected{% endif %}>已完成</option></select></label>
+      <label>订单日期从<input name="from_date" type="date" value="{{ from_date }}"></label>
+      <label>订单日期至<input name="to_date" type="date" value="{{ to_date }}"></label>
+    </div>
+    <div class="form-actions"><button class="button primary" type="submit">筛选订单</button><a class="button subtle" href="{{ url_for('orders.index') }}">清除</a></div>
+  </form>
+</section>
+<section class="panel space-top">
+  <div class="section-head"><div><h2>结果：{{ orders|length }} 笔</h2><p>订单金额合计 {{ total }} 元 · 已收 {{ received }} 元</p></div></div>
+  {% if orders %}
+  <div class="table-wrap"><table class="files-table"><thead><tr><th>订单</th><th>客户</th><th>日期</th><th>金额</th><th>收款</th><th>完成</th><th>操作</th></tr></thead><tbody>
+    {% for order in orders %}
+    <tr><td>#{{ order.id }} {{ order.service_name }}</td><td><a href="{{ url_for('customers.detail', customer_id=order.customer_id) }}">{{ order.customer_name }}</a></td>
+      <td>{{ order.order_date }}</td><td>{{ order.amount }} 元</td><td>{{ order.paid_total }} 元<br><span class="badge {{ 'done' if order.payment_status in ('已收款','无需收款') else 'pending' }}">{{ order.payment_status }}</span></td>
+      <td><span class="badge {{ 'done' if order.is_completed else 'pending' }}">{{ '已完成' if order.is_completed else '未完成' }}</span></td>
+      <td><a class="button small" href="{{ url_for('orders.detail', customer_id=order.customer_id, order_id=order.id) }}">查看／修改</a></td></tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<p>没有符合条件的订单。</p>{% endif %}
+</section>
+{% endblock %}
+

@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}订单 #{{ order.id }} · {{ customer.name }}{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><a href="{{ url_for('customers.detail', customer_id=customer.id) }}#service-orders">{{ customer.name }}</a> / 服务订单</div><h1>#{{ order.id }} {{ order.service_name }}</h1><p>订单日期 {{ order.order_date }} · 金额 {{ order.amount }} 元</p></div></div>
+<section class="panel">
+  <div class="section-head"><h2>订单信息</h2><div class="inline-form"><span class="badge {{ 'done' if order.is_completed else 'pending' }}">{{ '已完成' if order.is_completed else '未完成' }}</span><span class="badge {{ 'done' if payment_status == '已收款' else 'pending' }}">{{ payment_status }}</span></div></div>
+  <dl class="details">
+    <div><dt>服务项目</dt><dd>{{ order.service_name }}</dd></div>
+    <div><dt>订单日期</dt><dd>{{ order.order_date }}</dd></div>
+    <div><dt>服务期限</dt><dd>{{ order.service_start_month.strftime('%Y-%m') if order.service_start_month else '—' }} 至 {{ order.service_end_month.strftime('%Y-%m') if order.service_end_month else '—' }}</dd></div>
+    <div><dt>合同编号</dt><dd>{{ order.contract_number or '—' }}</dd></div>
+    <div><dt>应收日期</dt><dd>{{ order.due_date or '—' }}</dd></div>
+    <div><dt>订单金额</dt><dd>{{ order.amount }} 元</dd></div>
+    <div><dt>已收／未收</dt><dd>{{ paid_total }} / {{ remaining }} 元</dd></div>
+    <div><dt>备注</dt><dd class="pre-wrap">{{ order.note or '—' }}</dd></div>
+  </dl>
+  <details class="space-top"><summary>修改订单信息</summary>
+    <form method="post" action="{{ url_for('orders.edit', customer_id=customer.id, order_id=order.id) }}" class="stacked-form space-top">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-grid">
+        <label>服务项目 <em>*</em><input name="service_name" value="{{ order.service_name }}" maxlength="150" required></label>
+        <label>订单日期<input name="order_date" type="date" value="{{ order.order_date }}"></label>
+        <label>订单金额（元）<input name="amount" type="number" min="0" max="9999999999.99" step="0.01" value="{{ order.amount }}" required></label>
+        <label>服务起始月份<input name="service_start_month" type="month" value="{{ order.service_start_month.strftime('%Y-%m') if order.service_start_month else '' }}"></label>
+        <label>服务结束月份<input name="service_end_month" type="month" value="{{ order.service_end_month.strftime('%Y-%m') if order.service_end_month else '' }}"></label>
+        <label>应收日期<input name="due_date" type="date" value="{{ order.due_date or '' }}"></label>
+        <label>合同编号<input name="contract_number" maxlength="100" value="{{ order.contract_number or '' }}"></label>
+        <label>完成状态<select name="is_completed"><option value="0" {% if not order.is_completed %}selected{% endif %}>未完成</option><option value="1" {% if order.is_completed %}selected{% endif %}>已完成</option></select></label>
+      </div>
+      <label>订单备注<textarea name="note" rows="3" maxlength="1000">{{ order.note or '' }}</textarea></label>
+      <button class="button primary" type="submit">保存订单</button>
+    </form>
+  </details>
+</section>
+
+<section class="panel space-top" id="order-receipts">
+  <div class="section-head"><div><h2>收款记录</h2><p>可分次收款，收款状态由明细金额计算。</p></div></div>
+  {% if receipts %}
+  <div class="table-wrap"><table class="files-table"><thead><tr><th>日期</th><th>金额</th><th>方式／备注</th><th>操作</th></tr></thead><tbody>
+    {% for receipt in receipts %}
+    <tr><td>{{ receipt.received_on }}</td><td>{{ receipt.amount }} 元</td><td>{{ receipt.method or '—' }}{% if receipt.note %}<div class="muted">{{ receipt.note }}</div>{% endif %}</td><td>
+      <details><summary>修改</summary><form method="post" action="{{ url_for('orders.edit_receipt', customer_id=customer.id, order_id=order.id, receipt_id=receipt.id) }}" class="stacked-form space-top">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>收款金额<input name="amount" type="number" min="0.01" step="0.01" value="{{ receipt.amount }}" required></label>
+        <label>收款日期<input name="received_on" type="date" value="{{ receipt.received_on }}" required></label>
+        <label>收款方式<input name="method" maxlength="50" value="{{ receipt.method or '' }}"></label>
+        <label>备注<input name="note" maxlength="255" value="{{ receipt.note or '' }}"></label>
+        <button class="button small" type="submit">保存收款</button>
+      </form></details>
+      <form method="post" action="{{ url_for('orders.delete_receipt', customer_id=customer.id, order_id=order.id, receipt_id=receipt.id) }}" data-confirm="确定删除这笔收款记录吗？" class="space-top">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button small danger-text" type="submit">删除</button>
+      </form></td></tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<p>暂无收款记录。</p>{% endif %}
+  <details class="space-top"><summary>新增收款</summary>
+    <form method="post" action="{{ url_for('orders.create_receipt', customer_id=customer.id, order_id=order.id) }}" class="stacked-form space-top">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-grid">
+        <label>金额（元）<input name="amount" type="number" min="0.01" max="{{ remaining }}" step="0.01" required></label>
+        <label>收款日期<input name="received_on" type="date"></label>
+        <label>方式<input name="method" maxlength="50" placeholder="例如银行转账"></label>
+      </div>
+      <label>备注<input name="note" maxlength="255"></label>
+      <button class="button primary" type="submit">登记收款</button>
+    </form>
+  </details>
+</section>
+
+<section class="panel space-top" id="order-documents">
+  <div class="section-head"><div><h2>订单文件</h2><p>原始凭证、合同和收款凭据可多份上传。单文件最多 20 MB，保存时加密。</p></div><span class="count-pill">{{ documents|length }} 个</span></div>
+  <form method="post" enctype="multipart/form-data" data-secure-upload action="{{ url_for('orders.upload_vouchers', customer_id=customer.id, order_id=order.id) }}" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid"><label>文件类别<select name="document_type">{% for code, label in document_types.items() %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</select></label><label>选择文件，可多选<input type="file" name="file" multiple required></label></div>
+    <button class="button primary" type="submit">上传文件</button>
+  </form>
+  {% if documents %}
+  <div class="table-wrap space-top"><table class="files-table"><thead><tr><th>类别</th><th>文件名</th><th>大小</th><th>操作</th></tr></thead><tbody>
+    {% for document in documents %}
+    <tr><td>{{ document_types.get(document.document_type, document.document_type) }}</td><td>{{ document.original_name }}</td><td>{{ document.size_bytes }} 字节</td>
+      <td class="inline-form"><a class="button small" href="{{ url_for('orders.download_voucher', customer_id=customer.id, order_id=order.id, voucher_id=document.id) }}">下载</a><form method="post" action="{{ url_for('orders.delete_voucher', customer_id=customer.id, order_id=order.id, voucher_id=document.id) }}" data-confirm="确定删除这个文件吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button small danger-text" type="submit">删除</button></form></td></tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% endif %}
+</section>
+<section class="danger-zone"><div><h2>删除订单</h2><p>同时删除收款记录和全部订单文件。</p></div><form method="post" action="{{ url_for('orders.delete', customer_id=customer.id, order_id=order.id) }}" data-confirm="确定删除整个订单及其收款和文件吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button danger" type="submit">删除订单</button></form></section>
+{% endblock %}
+

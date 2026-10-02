@@ -11,6 +11,8 @@ from tax_manager.customers.availability import deactivated_at_for_change
 from tax_manager.db import connect
 from tax_manager.images.storage import remove_image
 from tax_manager.customer_files.storage import remove_other_file
+from tax_manager.orders.storage import remove_encrypted_voucher
+from tax_manager.orders.validation import paid_status
 
 
 blueprint = Blueprint("customers", __name__)
@@ -114,13 +116,13 @@ def create():
                 validate_customer_choices(conn, data)
                 row = conn.execute(
                     """INSERT INTO customers
-                       (name, tax_identifier, contact_name, contact_phone, note,
+                       (name, tax_identifier, contact_name, contact_phone, note, bookkeeping_start_month,
                         registered_on, registered_at, is_available, deactivated_at,
                         taxpayer_identity_id, service_type_id, customer_source_id)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        RETURNING id""",
                     (data.name, data.tax_identifier, data.contact_name, data.contact_phone,
-                     data.note, registered_on, registered_at,
+                     data.note, data.bookkeeping_start_month, registered_on, registered_at,
                      True if data.is_available is None else data.is_available,
                      china_now() if data.is_available is False else None,
                      data.taxpayer_identity_id, data.service_type_id, data.customer_source_id),
@@ -173,6 +175,18 @@ def detail(customer_id: int):
             "SELECT id, original_name, size_bytes FROM customer_files WHERE customer_id = %s ORDER BY id DESC",
             (customer_id,),
         ).fetchall()
+        accounts = conn.execute(
+            """SELECT id, system_name, login_url, note, created_at
+               FROM customer_system_accounts WHERE customer_id = %s ORDER BY id""",
+            (customer_id,),
+        ).fetchall()
+        orders = conn.execute(
+            """SELECT o.*, COALESCE((SELECT SUM(r.amount) FROM order_receipts AS r
+               WHERE r.order_id = o.id), 0) AS paid_total,
+               (SELECT count(*) FROM order_vouchers AS v WHERE v.order_id = o.id) AS document_count
+               FROM service_orders AS o WHERE o.customer_id = %s ORDER BY o.order_date DESC, o.id DESC""",
+            (customer_id,),
+        ).fetchall()
         categories = conn.execute(
             "SELECT id, name FROM tag_categories WHERE kind = 'general' ORDER BY lower(name), id"
         ).fetchall()
@@ -196,12 +210,14 @@ def detail(customer_id: int):
     current = months.get(china_today().replace(day=1), {"is_booked": False, "is_filed": False})
     assigned_ids = {category["id"] for category in assigned_categories}
     available_categories = [category for category in categories if category["id"] not in assigned_ids]
+    for order in orders:
+        order["payment_status"] = paid_status(order["amount"], [order["paid_total"]])
     registered_at = customer.get("registered_at")
     registered_at_china = registered_at.astimezone(CHINA_TZ).strftime("%Y-%m-%d %H:%M") if registered_at else str(customer["registered_on"])
     return render_template(
         "customers/detail.html", customer=customer, history=history, current_record=current,
         registered_at_china=registered_at_china, files_open=request.args.get("files") == "open",
-        files=files, assigned_categories=assigned_categories,
+        files=files, accounts=accounts, orders=orders, assigned_categories=assigned_categories,
         available_categories=available_categories,
     )
 
@@ -253,13 +269,13 @@ def edit(customer_id: int):
                 )
                 row = conn.execute(
                     """UPDATE customers SET name = %s, tax_identifier = %s,
-                       contact_name = %s, contact_phone = %s, note = %s,
+                       contact_name = %s, contact_phone = %s, note = %s, bookkeeping_start_month = %s,
                        registered_on = %s, registered_at = %s, is_available = %s,
                        deactivated_at = %s, taxpayer_identity_id = %s, service_type_id = %s, customer_source_id = %s,
                        updated_at = now()
                        WHERE id = %s RETURNING id""",
                     (data.name, data.tax_identifier, data.contact_name, data.contact_phone,
-                     data.note, registered_on, registered_at,
+                     data.note, data.bookkeeping_start_month, registered_on, registered_at,
                      new_available, deactivated_at,
                      data.taxpayer_identity_id, data.service_type_id, data.customer_source_id,
                      customer_id),
@@ -362,6 +378,11 @@ def delete(customer_id: int):
         file_keys = [row["storage_key"] for row in conn.execute(
             "SELECT storage_key FROM customer_files WHERE customer_id = %s FOR UPDATE", (customer_id,)
         ).fetchall()]
+        voucher_keys = [row["storage_key"] for row in conn.execute(
+            """SELECT v.storage_key FROM order_vouchers AS v
+               JOIN service_orders AS o ON o.id = v.order_id WHERE o.customer_id = %s""",
+            (customer_id,),
+        ).fetchall()]
         conn.execute("DELETE FROM customer_files WHERE customer_id = %s", (customer_id,))
         conn.execute("DELETE FROM customer_images WHERE customer_id = %s", (customer_id,))
         conn.execute("DELETE FROM monthly_bookkeeping WHERE customer_id = %s", (customer_id,))
@@ -379,5 +400,10 @@ def delete(customer_id: int):
         except OSError:
             current_app.logger.exception("Failed to remove customer other file")
             flash("客户已删除，但有其他文件未清理，请检查服务器日志", "error")
+    for key in voucher_keys:
+        try:
+            remove_encrypted_voucher(current_app.config["STORAGE_DIR"], key)
+        except OSError:
+            current_app.logger.exception("Failed to remove customer order document")
     flash("客户已删除", "success")
     return redirect(url_for("customers.index"))

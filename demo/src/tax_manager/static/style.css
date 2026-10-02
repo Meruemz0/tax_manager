@@ -11,3 +11,8 @@
 .availability-status{display:grid;justify-items:end;gap:6px}.availability-time{color:#8a6b68;font-size:.78rem}
 
 .file-disclosure>summary{display:inline-flex;align-items:center;gap:10px;cursor:pointer;list-style:none;border:1px solid #c7d8ca;border-radius:10px;background:#fff;color:#24553d;padding:9px 12px;font-weight:700}.file-disclosure>summary::-webkit-details-marker{display:none}.file-disclosure>summary::before{content:"\25b8"}.file-disclosure[open]>summary::before{content:"\25be"}.file-disclosure>.file-panel{margin-top:12px}
+
+.account-action-message { display: inline-block; margin-top: .35rem; color: var(--muted, #526071); font-size: .82rem; }
+.account-secret { display: block; margin-top: .35rem; padding: .45rem .6rem; border-radius: .35rem; background: #f3f6fa; overflow-wrap: anywhere; font-family: ui-monospace, monospace; user-select: text; }
+#system-accounts td, #service-orders td { vertical-align: top; }
+#system-accounts details form, #order-receipts details form { min-width: min(19rem, 100%); }
