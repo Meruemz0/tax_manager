@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}模板管理 · 税务客户管理{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><a href="{{ url_for('contract_templates.workspace') }}">合同</a> / 模板管理</div><h1>模板管理</h1><p>维护通用条款和需要填写的空格；每次使用模板时可以重新填写。</p></div><a class="button primary" href="{{ url_for('contract_templates.new') }}">新增模板</a></div>
+<section class="panel">
+{% if templates %}<div class="table-wrap"><table class="files-table"><thead><tr><th>模板</th><th>用途</th><th>操作</th></tr></thead><tbody>
+{% for item in templates %}<tr><td>{{ item.title }}</td><td>{{ item.description or '—' }}</td><td>
+<div class="inline-form"><a class="button small primary" href="{{ url_for('contract_templates.workspace', template_id=item.id) }}">使用并填写</a>
+<a class="button small" href="{{ url_for('contract_templates.edit', template_id=item.id) }}">修改</a><a class="button small" href="{{ url_for('contract_templates.new', copy=item.id) }}">复制</a>
+<form method="post" action="{{ url_for('contract_templates.delete', template_id=item.id) }}" data-confirm="确定删除这个模板吗？"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="button small danger-text">删除</button></form></div>
+<div class="inline-form space-top"><a class="button small" href="{{ url_for('contract_templates.download_blank', template_id=item.id, kind='docx') }}">空白 DOCX</a><a class="button small" href="{{ url_for('contract_templates.download_blank', template_id=item.id, kind='pdf') }}">空白 PDF</a></div>
+</td></tr>{% endfor %}</tbody></table></div>
+{% else %}<p>暂无模板，点击“新增模板”创建。</p>{% endif %}
+</section>
+{% endblock %}

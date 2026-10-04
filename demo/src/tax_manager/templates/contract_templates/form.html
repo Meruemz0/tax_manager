@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}编辑合同模板{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><a href="{{ url_for('contract_templates.index') }}">模板管理</a></div><h1>{{ '复制模板' if is_copy else ('修改模板' if template.title else '新增模板') }}</h1><p>先编辑正文，将光标放到需要填空的位置，再点击“新增空格”或已有空格的“插入”。</p></div></div>
+<section class="panel">
+<form method="post" action="{{ action }}" class="stacked-form" data-template-editor>
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<div class="form-grid"><label>模板名称 <em>*</em><input name="title" required maxlength="100" value="{{ (template.title ~ '（副本）') if is_copy else template.title }}"></label><label>用途说明<input name="description" maxlength="255" value="{{ template.description or '' }}"></label></div>
+<label>模板正文 <em>*</em><textarea name="body" rows="22" required maxlength="20000" class="contract-body-editor" data-template-body>{{ template.body }}</textarea></label>
+<div class="section-head"><div><h2>填空配置</h2><p>名称是填写时显示的提示；同一个空格插入多次时会同步填写。</p></div><button type="button" class="button" data-add-contract-field>新增空格</button></div>
+<div class="table-wrap"><table class="files-table contract-field-table"><thead><tr><th>标识</th><th>空格名称</th><th>类型</th><th>操作</th></tr></thead><tbody data-contract-field-rows>
+{% for field in template.fields %}<tr data-field-row><td><input name="field_key" readonly value="{{ field.key }}" aria-label="空格标识"></td><td><input name="field_label" maxlength="80" value="{{ field.label }}" required aria-label="空格名称"></td><td><select name="field_type" aria-label="空格类型">{% for code,label in field_types.items() %}<option value="{{ code }}" {% if field.type == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></td><td><div class="inline-form"><button type="button" class="button small" data-insert-contract-field>插入</button><button type="button" class="button small danger-text" data-remove-contract-field>删除</button></div></td></tr>{% endfor %}
+</tbody></table></div>
+<div class="form-actions"><button class="button primary" type="submit">保存模板</button><a class="button" href="{{ url_for('contract_templates.index') }}">返回</a></div>
+</form>
+</section>
+{% endblock %}

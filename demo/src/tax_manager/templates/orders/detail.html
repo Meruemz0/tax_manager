@@ -33,6 +33,11 @@
   </details>
 </section>
 
+<section class="panel space-top">
+  <div class="section-head"><div><h2>签订合同</h2><p>选择模板，在合同正文中填写双方信息。</p></div><a class="button primary" href="{{ url_for('contract_templates.workspace') }}">打开合同模块</a></div>
+  <p>下载后核对条款并签署；签署完成的文件可上传到下方“订单文件”的“合同”类别。</p>
+</section>
+
 <section class="panel space-top" id="order-receipts">
   <div class="section-head"><div><h2>收款记录</h2><p>可分次收款，收款状态由明细金额计算。</p></div></div>
   {% if receipts %}

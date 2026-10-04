@@ -16,6 +16,10 @@
 
 **客户账号与服务订单升级：** 停止网站后，在 Navicat 对同一个 `tax_db` 执行 [upgrade_v6.sql](upgrade_v6.sql)，确认成功后再启动网站。它新增建账月份、客户系统账号、服务订单、分次收款和加密订单文件表；已有客户与其他文件保留。新数据库依次执行 `init.sql` 到 `upgrade_v6.sql`，不可跳步。本脚本可重复运行。**启动新版网站前必须先执行此脚本**，否则客户详情会因缺少新表而报错。
 
+**合同模板升级：** 确认已执行 `upgrade_v6.sql`，关闭网站后，在 Navicat 对同一个 `tax_db` 执行 [upgrade_v7.sql](upgrade_v7.sql)，成功后再启动网站。该脚本新增合同模板和受托服务方资料表，预置三种模板；再次执行不会重置已修改或已删除的模板。旧客户、订单及订单文件不受影响。新数据库在 `upgrade_v6.sql` 后继续执行 `upgrade_v7.sql`。
+
+**独立合同填写升级（本次）：** 停止网站后，在 Navicat 对同一个 `tax_db` 执行 [upgrade_v8.sql](upgrade_v8.sql)，成功后再启动。必须先执行 `upgrade_v7.sql`；v8 新增模板空格配置，不删除客户、订单或旧模板，也不覆盖旧正文。旧版受托服务方资料表保留原数据，但新版界面与导出不再读取它。新数据库在 v7 后继续执行 v8。
+
 ## 安装与运行
 
 需要 Python 3.11+ 和 [uv](https://docs.astral.sh/uv/)。在 `demo` 目录执行：
@@ -64,7 +68,22 @@ Windows PowerShell 可直接运行上面的 `uv run` 命令。管理命令则先
 - **标签分类**：在页面中分别管理“纳税人身份”“服务类型”“客户来源”的单选值，以及旧版“其他标签”。记账、报税状态不在标签页管理。API `GET /api/tag-categories?kind=service_type` 查询，`POST /api/tag-categories` 创建，例如 `{"kind":"service_type","name":"代理记账"}`。kind 可为 `taxpayer_identity`、`service_type`、`customer_source`、`general`；省略时按 `general` 处理。
 - **系统账号**：客户详情页可为一个客户添加最多 10 条外部系统账号。账号与密码都以密文保存；点击“复制账号”或“复制密码”时才按需解密并写入剪贴板，点击“显示账号”或“显示密码”可临时显示 20 秒。修改时新账号、新密码留空表示保留原值。不同电脑通过局域网地址访问时需配置 HTTPS，浏览器才可靠支持一键复制；已复制的内容会留在使用者电脑的剪贴板，直到被覆盖。
 - **服务订单**：主导航“服务订单”可跨客户筛选订单。客户详情可添加订单，订单详情可修改服务项目、金额、订单日期、服务起止月份、应收日期、合同编号、备注和独立的完成状态；每笔订单可分次登记、修改或删除收款记录，系统据此计算未收、部分收、已收。订单可上传不限数量的原始凭证、合同和收款凭据，单文件最多 20 MiB，内容和文件名加密保存。
+- **合同**：主导航点击“合同”，在左侧选择模板，右侧即显示完整正文，可直接填写空格；重复出现的同一空格会同步。点击“检查空格”检查遗漏，再下载 DOCX 或 PDF；未填位置在文件中保留空白线。点击当前已选模板可重新加载正文，并保留标识和类型未变的空格内容；模板修改后导出会提示重新加载与核对。此模块可独立使用，无需客户或订单，双方资料直接写在正文中，不再有单独的“受托服务方资料”设置。本次填写不会修改模板，且不自动保存；切换模板前会提示清空已填内容，离开或刷新页面会丢失尚未下载的填写内容。签署后的文件可自行保存，也可上传到对应订单。
+- **模板管理**：从合同页进入“模板管理”，新增、修改、复制或删除模板。编辑正文时，把光标放在需要填空的位置，点击“新增空格”；在“填空配置”设置名称与类型（文字、多行文字、日期、年月、金额、每月日期）。已有空格点击“插入”可重复使用，同一个标识在填写时会同步。模板保存后也可下载空白 DOCX/PDF。预置“代理记账及纳税申报”“仅代理记账”“建账及历史账务整理”三类草稿；旧模板中的下划线留白也会自动变为可填写空格，可在编辑页面为它们修改名称。
 - **其他文件**：详情页的整个文件区默认收起，展开后可一次选择多个文件并上传、改名、下载和删除。格式不限，单文件最多 20 MiB，每个客户没有文件数量上限。单次请求总大小仍为 64 MiB，超过时分批上传。上传表单通过 JavaScript 提交，请保持浏览器启用 JavaScript。文件经登录校验并强制作为附件下载。客户删除时同时清理月度记录和其他文件；如客户有旧版图片，也会清理这些历史图片。
+
+### 合同模板样本
+
+仓库内还附有六份可直接查看的空白示例：
+
+| 用途 | 可编辑 | 可打印 |
+| --- | --- | --- |
+| 代理记账及纳税申报 | [DOCX](contract_samples/代理记账及纳税申报服务合同.docx) | [PDF](contract_samples/代理记账及纳税申报服务合同.pdf) |
+| 仅代理记账 | [DOCX](contract_samples/代理记账服务合同（不含纳税申报）.docx) | [PDF](contract_samples/代理记账服务合同（不含纳税申报）.pdf) |
+| 建账及历史账务整理 | [DOCX](contract_samples/建账及历史账务整理专项服务合同.docx) | [PDF](contract_samples/建账及历史账务整理专项服务合同.pdf) |
+
+条款结构参考[财政部《代理记账基础工作规范（试行）》及其委托合同参考范例](https://www.mof.gov.cn/jrttts/202312/P020231204376958383860.pdf)，由本项目重新撰写。预置条款属于可编辑草稿，签署前须根据实际服务范围、收费、会计资料交接、责任和争议安排核对并补全留白；模板中“代理纳税申报”指人工承接的服务范围，网站自身不连接税务系统。
+PDF 会嵌入 [Google Fonts 的 Noto Sans SC 字体](https://github.com/google/fonts/tree/main/ofl/notosanssc)的正常字重版本，来源与许可见 [SOURCE.txt](src/tax_manager/contract_templates/fonts/SOURCE.txt) 和 [OFL.txt](src/tax_manager/contract_templates/fonts/OFL.txt)。如果合同中含该 PDF 字体不支持的特殊字符，系统会拒绝生成 PDF 并提示使用 DOCX，以免姓名或条款被悄悄改写。
 
 ### 一次创建完整客户的 API
 
@@ -114,6 +133,8 @@ PostgreSQL 存客户、两种月度状态、网站登录账号、加密的客户
 uv run --frozen pytest -q
 ```
 
+合同浏览器交互检查可在安装 Playwright Chromium 后运行 `uv run --frozen --with playwright==1.55.0 python tests/check_contract_browser.py`；它启动临时测试服务，使用测试数据，不连接实际数据库。
+
 需要同时备份 PostgreSQL 和 `STORAGE_DIR`。删除操作会立即移除数据；如需恢复，请从对应时间点的数据库和文件备份一起恢复。数据库提交后若文件清理失败，页面会提示，服务器日志会记录错误；此时可能留有孤立文件，需要人工清理。
 
 旧版图片页面与 API 已移除。旧版 `customer_images`、`unassigned_images` 表及对应文件不会因本次升级自动删除，以免丢失已有资料。若旧客户被删除，其关联的历史图片会一并清理。
@@ -123,3 +144,12 @@ uv run --frozen pytest -q
 `src/tax_manager/auth` 负责登录和密码，`customers` 负责客户及月度状态，`tags` 负责标签分类，`customer_files` 负责其他文件，`db` 负责连接，`templates` 与 `static` 提供网页界面。SQL 使用参数化查询，动态表名只从固定白名单选择。
 
 FastAPI（MIT）处理路由和 API，Starlette（BSD-3-Clause）处理会话与模板响应，Uvicorn（BSD-3-Clause）运行 ASGI 服务。Psycopg 3 及其 binary 包（LGPL-3.0-only）连接 PostgreSQL。依赖版本锁在 `uv.lock`。应用本身不使用 LLM。
+
+### 独立合同接口
+
+以下接口均需登录。修改和导出需携带 CSRF token。
+
+- `GET /contracts`：独立合同填写页面；可用 `?template_id=1` 指定模板。
+- `GET /api/contract-templates/1/document`：取得正文、空格定义、渲染分段和模板版本。
+- `POST /contracts/1/generate`：下载合同，JSON 示例：`{"format":"docx","version":"上个接口返回的version","values":{"customer_name":"甲公司","provider_name":"乙公司"}}`。format 可用 docx/pdf。values 中的键来自模板 fields，未知键或无效类型返回 400；模板在填写期间变更则返回 409，避免填写内容套入已修改的合同。
+- 模板新增/修改接口为 `POST /contract-templates` 和 `POST /contract-templates/1/edit`，使用表单字段 title、description、body，以及可重复的 field_key、field_label、field_type。正文用 `{{field_key}}` 放置空格。

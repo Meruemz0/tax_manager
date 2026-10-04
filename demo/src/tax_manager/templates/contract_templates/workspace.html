@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}合同 · 税务客户管理{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1>合同</h1><p>选择模板后，直接在合同正文的空格中填写双方资料。</p></div><a class="button" href="{{ url_for('contract_templates.index') }}">模板管理</a></div>
+<div class="contract-workspace" data-contract-workspace>
+  <aside class="panel contract-choice-panel"><h2>选择合同模板</h2>
+    <div class="contract-choices">
+    {% for item in templates %}<a class="contract-choice {% if selected and selected.id == item.id %}active{% endif %}" data-contract-select data-document-url="{{ url_for('contract_templates.document', template_id=item.id) }}" href="{{ url_for('contract_templates.workspace', template_id=item.id) }}"><strong>{{ item.title }}</strong><span>{{ item.description or '点击后填写' }}</span></a>{% endfor %}
+    {% if not templates %}<p>暂无模板，先到<a href="{{ url_for('contract_templates.new') }}">模板管理新增</a>。</p>{% endif %}
+    </div>
+  </aside>
+  <section class="contract-writing">
+    <div class="panel contract-toolbar">
+      <p id="contract-fill-status" aria-live="polite">{{ '可以开始填写' if selected else '请先选择一个模板' }}</p>
+      <div class="form-actions">
+        <button class="button" type="button" data-check-contract {% if not selected %}disabled{% endif %}>检查空格</button>
+        <button class="button primary" type="submit" form="contract-fill-form" name="format" value="docx" {% if not selected %}disabled{% endif %}>下载 DOCX</button>
+        <button class="button" type="submit" form="contract-fill-form" name="format" value="pdf" {% if not selected %}disabled{% endif %}>下载 PDF</button>
+      </div><p id="contract-error" class="contract-error" role="alert" hidden></p>
+    </div>
+    <form id="contract-fill-form" data-contract-form method="post" action="{{ selected.generate_url if selected else '' }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="version" value="{{ selected.version if selected else '' }}">
+      <article class="contract-paper" id="contract-paper">
+      {% if selected %}
+        <h2>{{ selected.title }}</h2>
+        {% for line in selected.lines %}<p class="contract-line">{% for part in line -%}
+          {%- if 'text' in part -%}{{ part.text }}
+          {%- else -%}{% set field = part.field %}
+            {%- if field.type == 'textarea' -%}<textarea class="contract-blank contract-multiline" name="value__{{ field.key }}" data-contract-field="{{ field.key }}" data-field-type="{{ field.type }}" aria-label="{{ field.label }}" placeholder="{{ field.label }}" maxlength="2000" rows="1"></textarea>
+            {%- else -%}<input class="contract-blank" name="value__{{ field.key }}" data-contract-field="{{ field.key }}" data-field-type="{{ field.type }}" aria-label="{{ field.label }}" placeholder="{{ field.label }}" maxlength="500" type="{{ 'number' if field.type in ['money','day'] else (field.type if field.type in ['date','month'] else 'text') }}" {% if field.type == 'money' %}min="0" max="9999999999.99" step="0.01"{% elif field.type == 'day' %}min="1" max="31" step="1"{% endif %}>
+            {%- endif -%}
+          {%- endif -%}
+        {%- endfor %}</p>{% endfor %}
+      {% else %}<div class="contract-empty"><h2>选择一份合同开始填写</h2><p>正文会显示在这里，填写内容只用于本次下载。</p></div>{% endif %}
+      </article>
+    </form>
+    <p class="muted">空格未填时，导出文件保留空白线。签署前请核对正文和双方填写的信息。</p>
+  </section>
+</div>
+{% endblock %}

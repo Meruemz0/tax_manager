@@ -93,11 +93,13 @@ def create_app(test_config: dict | None = None) -> FastAPI:
     from tax_manager.customer_files import blueprint as customer_files_blueprint
     from tax_manager.customer_accounts import blueprint as customer_accounts_blueprint
     from tax_manager.orders import blueprint as orders_blueprint
+    from tax_manager.contract_templates import blueprint as contract_templates_blueprint
 
     app.state.route_params = {}
     for item in (
         main, auth_blueprint, customers_blueprint, customer_api_blueprint,
         tags_blueprint, customer_files_blueprint, customer_accounts_blueprint, orders_blueprint,
+        contract_templates_blueprint,
     ):
         for route in item.router.routes:
             app.state.route_params[route.name] = re.findall(
